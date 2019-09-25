@@ -1,0 +1,13 @@
+
+	Instalando o MODULO
+	make
+	sudo insmod ebbchar.ko
+	puc123
+
+	Testanto o MODULO
+	sudo ./test
+
+	Removendo o MODULO
+	sudo rmmod ebbchar.o
+
+
