@@ -96,6 +96,8 @@ cryptoapi_demo(void)
 
 	sg_init_one(&sg[0], input, DATA_SIZE);
 	skcipher_request_set_crypt(req, &sg[0], &sg[1], DATA_SIZE, iv);
+	crypto_skcipher_encrypt(req);
+	crypto_skcipher_decrypt(req);	
 
         printk(KERN_ERR PFX "IN: "); hexdump(input, DATA_SIZE);
         printk(KERN_ERR PFX "EN: "); hexdump(encrypted, DATA_SIZE);
