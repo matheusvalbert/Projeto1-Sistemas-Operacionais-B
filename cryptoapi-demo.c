@@ -1,3 +1,5 @@
+
+
 /* 
  * Simple demo explaining usage of the Linux kernel CryptoAPI.
  * By Michal Ludvig <michal@logix.cz>
@@ -9,7 +11,8 @@
 #include <linux/init.h>
 #include <linux/crypto.h>
 #include <linux/mm.h>
-#include <asm/scatterlist.h>
+#include <linux/scatterlist.h>
+#include <crypto/skcipher.h>
 
 #define PFX "cryptoapi-demo: "
 
@@ -20,8 +23,6 @@ MODULE_LICENSE("GPL");
 /* ====== CryptoAPI ====== */
 
 #define DATA_SIZE       16
-
-#define FILL_SG(sg,ptr,len)     do { (sg)->page = virt_to_page(ptr); (sg)->offset = offset_in_page(ptr); (sg)->length = len; } while (0)
 
 static void
 hexdump(unsigned char *buf, unsigned int len)
@@ -36,30 +37,36 @@ static void
 cryptoapi_demo(void)
 {
         /* config options */
-        char *algo = "aes";
-        int mode = CRYPTO_TFM_MODE_CBC;
         char key[16], iv[16];
 
         /* local variables */
-        struct crypto_tfm *tfm;
+        struct crypto_skcipher *tfm = NULL;
         struct scatterlist sg[8];
+	struct skcipher_request *req;
         int ret;
         char *input, *encrypted, *decrypted;
 
         memset(key, 0, sizeof(key));
         memset(iv, 0, sizeof(iv));
 
-        tfm = crypto_alloc_tfm (algo, mode);
+        tfm = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
 
-        if (tfm == NULL) {
-                printk("failed to load transform for %s %s\n", algo, mode == CRYPTO_TFM_MODE_CBC ? "CBC" : "");
+        if (IS_ERR(tfm)) {
+                printk("could nor allocate skcipher tfm\n");
                 return;
         }
 
-        ret = crypto_cipher_setkey(tfm, key, sizeof(key));
+
+	req = skcipher_request_alloc(tfm, GFP_KERNEL);
+    	if (!req) {
+        	printk("could not allocate tfm request\n");
+        	goto out;
+    	}
+
+        ret = crypto_skcipher_setkey(tfm, key, sizeof(key));
 
         if (ret) {
-                printk(KERN_ERR PFX "setkey() failed flags=%x\n", tfm->crt_flags);
+                printk(KERN_ERR PFX "error ret\n");
                 goto out;
         }
 
@@ -86,23 +93,8 @@ cryptoapi_demo(void)
 
         memset(input, 0, DATA_SIZE);
 
-        FILL_SG(&sg[0], input, DATA_SIZE);
-        FILL_SG(&sg[1], encrypted, DATA_SIZE);
-        FILL_SG(&sg[2], decrypted, DATA_SIZE);
-
-        crypto_cipher_set_iv(tfm, iv, crypto_tfm_alg_ivsize (tfm));
-        ret = crypto_cipher_encrypt(tfm, &sg[1], &sg[0], DATA_SIZE);
-        if (ret) {
-                printk(KERN_ERR PFX "encryption failed, flags=0x%x\n", tfm->crt_flags);
-                goto out_kfree;
-        }
-
-        crypto_cipher_set_iv(tfm, iv, crypto_tfm_alg_ivsize (tfm));
-        ret = crypto_cipher_decrypt(tfm, &sg[2], &sg[1], DATA_SIZE);
-        if (ret) {
-                printk(KERN_ERR PFX "decryption failed, flags=0x%x\n", tfm->crt_flags);
-                goto out_kfree;
-        }
+	sg_init_one(&sg[0], input, DATA_SIZE);
+	skcipher_request_set_crypt(req, &sg[1], &sg[0], DATA_SIZE, iv);
 
         printk(KERN_ERR PFX "IN: "); hexdump(input, DATA_SIZE);
         printk(KERN_ERR PFX "EN: "); hexdump(encrypted, DATA_SIZE);
@@ -113,13 +105,12 @@ cryptoapi_demo(void)
         else
                 printk(KERN_ERR PFX "PASS: encryption/decryption verified\n");
 
-out_kfree:
         kfree(decrypted);
         kfree(encrypted);
         kfree(input);
 
 out:
-        crypto_free_tfm(tfm);
+        crypto_free_skcipher(tfm);
 }
 
 /* ====== Module init/exit ====== */
@@ -139,3 +130,5 @@ exit_cryptoapi_demo(void)
 
 module_init(init_cryptoapi_demo);
 module_exit(exit_cryptoapi_demo);
+
+
