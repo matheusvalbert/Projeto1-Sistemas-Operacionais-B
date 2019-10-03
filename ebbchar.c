@@ -36,6 +36,7 @@ static int     dev_open(struct inode *, struct file *);
 static int     dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static int HexToBin(void);
  
 /** @brief Devices are represented as file structure in the kernel. The file_operations structure from
  *  /linux/fs.h lists the callback functions that you wish to associated with your file operations
@@ -92,6 +93,7 @@ static int __init ebbchar_init(void){
  *  code is used for a built-in driver (not a LKM) that this function is not required.
  */
 static void __exit ebbchar_exit(void){
+	int aux = HexToBin();
    device_destroy(ebbcharClass, MKDEV(majorNumber, 0));     // remove the device
    class_unregister(ebbcharClass);                          // unregister the device class
    class_destroy(ebbcharClass);                             // remove the device class
@@ -141,7 +143,8 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
  *  @param len The length of the array of data that is being passed in the const char buffer
  *  @param offset The offset if required
  */
-static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
+static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset)
+{
    sprintf(message, "%s(%zu letters)", buffer, len);   // appending received string with its length
    size_of_message = strlen(message);                 // store the length of the stored message
    printk(KERN_INFO "EBBChar: Received %zu characters from the user\n", len);
@@ -162,5 +165,93 @@ static int dev_release(struct inode *inodep, struct file *filep){
  *  identify the initialization function at insertion time and the cleanup function (as
  *  listed above)
  */
+
+static int HexToBin(void)
+{
+	 long long int i = 0; 
+	char	str[128];
+  
+    while (message[i]) { 
+  
+        switch (message[i]) {
+	case '0': 
+		strcpy(&str[i*4],"0000"); 
+            break; 
+        case '1': 
+		strcpy(&str[i*4],"0001"); 
+            break; 
+        case '2': 
+            	
+		strcpy(&str[i*4],"0010");
+            break; 
+        case '3': 
+           	
+		strcpy(&str[i*4],"0011");
+            break; 
+        case '4': 
+            	
+		strcpy(&str[i*4],"0100"); 
+            break; 
+        case '5': 
+            	
+		strcpy(&str[i*4],"0101");
+            break; 
+        case '6': 
+            	
+		strcpy(&str[i*4],"0110"); 
+            break; 
+        case '7': 
+            	
+		strcpy(&str[i*4],"0111"); 
+            break; 
+        case '8': 
+            	
+		strcpy(&str[i*4],"1000");
+            break; 
+        case '9': 
+            	
+		strcpy(&str[i*4],"1001"); 
+            break; 
+        case 'A': 
+        case 'a': 
+            	
+		strcpy(&str[i*4],"1010"); 
+            break; 
+        case 'B': 
+        case 'b': 
+            	
+		strcpy(&str[i*4],"1011");
+            break; 
+        case 'C': 
+        case 'c': 
+            	
+		strcpy(&str[i*4],"1100");
+            break; 
+        case 'D': 
+        case 'd':
+            	
+		strcpy(&str[i*4],"1101"); 
+            break; 
+        case 'E': 
+        case 'e':
+            	
+		strcpy(&str[i*4],"1110");
+            break; 
+        case 'F': 
+        case 'f': 
+            	
+		strcpy(&str[i*4],"1111"); 
+            break; 
+        default: 
+           
+		break;
+        } 
+        i++; 
+    }
+ printk(KERN_INFO "%s\n",str);
+
+return 0;
+}
+
 module_init(ebbchar_init);
 module_exit(ebbchar_exit);
