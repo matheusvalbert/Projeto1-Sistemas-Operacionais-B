@@ -64,13 +64,14 @@ static void init_cryptoapi(void) {
         input = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!input) {
                 printk(KERN_ERR PFX "kmalloc(input) failed\n");
+		kfree(input);
                 goto out;
         }
 
         output = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!output) {
                 printk(KERN_ERR PFX "kmalloc(output) failed\n");
-                kfree(output);
+		kfree(output);
                 goto out;
         }
 
@@ -111,10 +112,10 @@ static void init_cryptoapi(void) {
 	printk(KERN_ERR PFX "IN: "); hexdump(input, 16);
         printk(KERN_ERR PFX "OUT: "); hexdump(output, 16);
 
-
-out:
         kfree(input);
 	kfree(output);
+
+out:
 	crypto_free_skcipher(tfm);
 }
 
