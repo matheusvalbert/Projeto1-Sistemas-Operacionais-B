@@ -1,11 +1,3 @@
-
-
-/* 
- * Simple demo explaining usage of the Linux kernel CryptoAPI.
- * By Michal Ludvig <michal@logix.cz>
- *    http://www.logix.cz/michal/
- */
-
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
@@ -13,16 +5,27 @@
 #include <linux/mm.h>
 #include <linux/scatterlist.h>
 #include <crypto/skcipher.h>
+#include <linux/kernel.h>
+#include <linux/stat.h>
+
 
 #define PFX "cryptoapi-demo: "
 
-MODULE_AUTHOR("Michal Ludvig <michal@logix.cz>");
-MODULE_DESCRIPTION("Simple CryptoAPI demo");
+MODULE_AUTHOR("Grupo SO");
+MODULE_DESCRIPTION("Simple CryptoAPI");
 MODULE_LICENSE("GPL");
 
 /* ====== CryptoAPI ====== */
 
 #define DATA_SIZE       16
+
+static char *key = "";//Para receber parâmetros
+static char *iv = "";
+
+module_param(key, charp, 0000);
+MODULE_PARM_DESC(key, "A string");
+module_param(iv, charp, 0000);
+MODULE_PARM_DESC(iv, "A string");
 
 static void
 hexdump(unsigned char *buf, unsigned int len)
@@ -38,27 +41,18 @@ hexdump(unsigned char *buf, unsigned int len)
 static void
 cryptoapi_demo(void)
 {
-        /* config options */
-        char key[16]={"0123456789ABCDEF"}, iv[16]={"0123456789ABCDEF"};
-
-        /* local variables */
         struct crypto_skcipher *tfm = NULL;
-	struct scatterlist sg[3];
+	struct scatterlist sg[2];
 	struct skcipher_request *req;
         int ret;
-        char *input, *encrypted, *decrypted;
+        char *input, *output;
 
-        //memset(key, 0, sizeof(key));
-        //memset(iv, 0, sizeof(iv));
-	//iv="0123456789ABCDEF";
-	//key="0123456789ABCDEF";
         tfm = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
 
         if (IS_ERR(tfm)) {
                 printk("could nor allocate skcipher tfm\n");
                 return;
         }
-
 
 	req = skcipher_request_alloc(tfm, GFP_KERNEL);
     	if (!req) {
@@ -76,67 +70,61 @@ cryptoapi_demo(void)
         input = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!input) {
                 printk(KERN_ERR PFX "kmalloc(input) failed\n");
+		kfree(input);
                 goto out;
         }
 
-        encrypted = kmalloc(DATA_SIZE, GFP_KERNEL);
-        if (!encrypted) {
-                printk(KERN_ERR PFX "kmalloc(encrypted) failed\n");
-                kfree(input);
+        output = kmalloc(DATA_SIZE, GFP_KERNEL);
+        if (!output) {
+                printk(KERN_ERR PFX "kmalloc(output) failed\n");
+                kfree(output);
                 goto out;
         }
 
-        decrypted = kmalloc(DATA_SIZE, GFP_KERNEL);
-        if (!decrypted) {
-                printk(KERN_ERR PFX "kmalloc(decrypted) failed\n");
-                kfree(encrypted);
-                kfree(input);
-                goto out;
-        }
 	
         memset(input,0, DATA_SIZE);
-	input[0] = 00;
-	input[1] = 11;
-	input[2] = 22;
-	input[3] = 33;
-	input[4] = 44;
-	input[5] = 55;
-	input[6] = 66;
-	input[7] = 77;
-	input[8] = 88;
-	input[9] = 99;
-	input[10] = 10;
-	input[11] = 20;
-	input[12] = 30;
-	input[13] = 40;
-	input[14] = 50;
+
+
+	input[0] = 220;
+	input[1] = 27;
+	input[2] = 182;
+	input[3] = 72;
+	input[4] = 85;
+	input[5] = 119;
+	input[6] = 248;
+	input[7] = 74;
+	input[8] = 33;
+	input[9] = 19;
+	input[10] = 212;
+	input[11] = 201;
+	input[12] = 101;
+	input[13] = 223;
+	input[14] = 40;
 	input[15] = 60;
 
 
 	sg_init_one(&sg[0], input, DATA_SIZE);
-	sg_init_one(&sg[1], encrypted, DATA_SIZE);
-	sg_init_one(&sg[2], decrypted, DATA_SIZE);
-	printk(KERN_ERR PFX "ANTES ENCRYPTED: "); hexdump(encrypted, 16);//data_size ultimo parametro
-	printk(KERN_ERR PFX "ANTES DECRYPTED: "); hexdump(decrypted, 16);
-	sg_copy_from_buffer(&sg[0],1,input, 16);
-	skcipher_request_set_crypt(req, &sg[0], &sg[1], 16, iv);
-	crypto_skcipher_encrypt(req);
-	sg_copy_from_buffer(&sg[1],1,encrypted, 16);
-	sg_copy_from_buffer(&sg[2],1,encrypted, 16);
-	skcipher_request_set_crypt(req, &sg[1], &sg[2], 16, iv);
-	crypto_skcipher_decrypt(req);
-	
-	printk(KERN_ERR PFX "IN: "); hexdump(input, 16);
-        printk(KERN_ERR PFX "DPS ENCRYPTED: "); hexdump(encrypted, 16);//data_size ultimo parametro
-	printk(KERN_ERR PFX "DPS DECRYPTED: "); hexdump(decrypted, 16);
+	sg_init_one(&sg[1], output, DATA_SIZE);
 
-        if (memcmp(input, decrypted, DATA_SIZE) != 0)
+
+	//printk(KERN_ERR PFX "IN B4 : "); hexdump(input, 16);
+	//printk(KERN_ERR PFX "OUT B4: "); hexdump(encrypted, 16);//data_size ultimo parametro
+
+
+
+	skcipher_request_set_crypt(req, &sg[0], &sg[1], 16, iv);
+	crypto_skcipher_decrypt(req);
+	crypto_skcipher_encrypt(req);
+	
+	//printk(KERN_ERR PFX "IN     AFTER: "); hexdump(input, 16);
+        //printk(KERN_ERR PFX "OUTPUT AFTER: "); hexdump(output, 16);//data_size ultimo parametro
+
+        if (memcmp(input, output, DATA_SIZE) != 0)
                 printk(KERN_ERR PFX "FAIL: input buffer != decrypted buffer\n");
         else
                 printk(KERN_ERR PFX "PASS: encryption/decryption verified\n");
 
-        kfree(decrypted);
-        kfree(encrypted);
+        kfree(output);
         kfree(input);
 
 out:
@@ -160,5 +148,6 @@ exit_cryptoapi_demo(void)
 
 module_init(init_cryptoapi_demo);
 module_exit(exit_cryptoapi_demo);
+
 
 
