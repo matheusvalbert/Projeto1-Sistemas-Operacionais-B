@@ -76,22 +76,23 @@ static void init_cryptoapi(void) {
         }
 
 	memset(input,0, DATA_SIZE);
-	input[0] = 00;
-	input[1] = 11;
-	input[2] = 22;
-	input[3] = 33;
-	input[4] = 44;
-	input[5] = 55;
-	input[6] = 66;
-	input[7] = 77;
-	input[8] = 88;
-	input[9] = 99;
-	input[10] = 10;
-	input[11] = 20;
-	input[12] = 30;
-	input[13] = 40;
-	input[14] = 50;
-	input[15] = 60;
+
+	input[0] = 0x00;
+	input[1] = 0x01;
+	input[2] = 0x02;
+	input[3] = 0x03;
+	input[4] = 0x04;
+	input[5] = 0x05;
+	input[6] = 0x06;
+	input[7] = 0x07;
+	input[8] = 0x08;
+	input[9] = 0x09;
+	input[10] = 0x10;
+	input[11] = 0x11;
+	input[12] = 0x12;
+	input[13] = 0x13;
+	input[14] = 0x14;
+	input[15] = 0x15;
 
 	sg_init_one(&sg[0], input, DATA_SIZE);
 	sg_init_one(&sg[1], output, DATA_SIZE);
