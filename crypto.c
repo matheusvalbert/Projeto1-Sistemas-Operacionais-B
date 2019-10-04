@@ -180,31 +180,32 @@ static int __init
 init_cryptoapi_demo(void)
 {
 
-	 majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
-	   if (majorNumber<0){
-	      printk(KERN_ALERT "EBBChar failed to register a major number\n");
+	//Register major number
+	majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
+	if (majorNumber<0)
+	{
+		printk(KERN_ALERT "Crypto failed to register a major number\n");
 	      return majorNumber;
-	   }
-	   printk(KERN_INFO "EBBChar: registered correctly with major number %d\n", majorNumber);
+	}
 	 
-	   // Register the device class
-	   cryptoClass = class_create(THIS_MODULE, CLASS_NAME);
-	   if (IS_ERR(cryptoClass)){                // Check for error and clean up if there is
-	      unregister_chrdev(majorNumber, DEVICE_NAME);
-	      printk(KERN_ALERT "Failed to register device class\n");
-	      return PTR_ERR(cryptoClass);          // Correct way to return an error on a pointer
-	   }
-	   printk(KERN_INFO "EBBChar: device class registered correctly\n");
+	// Register the device class
+	cryptoClass = class_create(THIS_MODULE, CLASS_NAME);
+	if (IS_ERR(cryptoClass)) // Check for error and clean up if there is
+	{              
+		unregister_chrdev(majorNumber, DEVICE_NAME);
+		printk(KERN_ALERT "Failed to register device class\n");
+		return PTR_ERR(cryptoClass);          // Correct way to return an error on a pointer
+	}
 	 
-	   // Register the device driver
-	   cryptoDevice = device_create(cryptoClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
-	   if (IS_ERR(cryptoDevice)){               // Clean up if there is an error
-	      class_destroy(cryptoClass);           // Repeated code but the alternative is goto statements
-	      unregister_chrdev(majorNumber, DEVICE_NAME);
-	      printk(KERN_ALERT "Failed to create the device\n");
-	      return PTR_ERR(cryptoDevice);
-	   }
-	   printk(KERN_INFO "EBBChar: device class created correctly\n"); // Made it! device was initialized
+	// Register the device driver
+	cryptoDevice = device_create(cryptoClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
+	if (IS_ERR(cryptoDevice)) // Clean up if there is an error
+	{               
+		class_destroy(cryptoClass);           // Repeated code but the alternative is goto statements
+		unregister_chrdev(majorNumber, DEVICE_NAME);
+		printk(KERN_ALERT "Failed to create the device\n");
+		return PTR_ERR(cryptoDevice);
+	}
 
 
         cryptoapi_demo();
@@ -213,12 +214,12 @@ init_cryptoapi_demo(void)
 }
 
 static void __exit
-{
-device_destroy(ebbcharClass, MKDEV(majorNumber, 0));     // remove the device
-class_unregister(ebbcharClass);                          // unregister the device class
-class_destroy(ebbcharClass);                             // remove the device class
-unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
 exit_cryptoapi_demo(void)
+{
+	device_destroy(cryptoClass, MKDEV(majorNumber, 0));     // remove the device
+	class_unregister(cryptoClass);                          // unregister the device class
+	class_destroy(cryptoClass);                             // remove the device class
+	unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
 }
 
 module_init(init_cryptoapi_demo);
