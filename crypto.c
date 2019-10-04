@@ -6,10 +6,14 @@
 #include <linux/scatterlist.h>
 #include <crypto/skcipher.h>
 #include <linux/kernel.h>
-#include <linux/stat.h>
+#include <linux/stat.h>   
+#include <linux/device.h>       
+#include <linux/fs.h>             
+#include <linux/uaccess.h>       
+#define  DEVICE_NAME "crypto"  
+#define  CLASS_NAME  "cryptoapi"        
 
-
-#define PFX "cryptoapi-demo: "
+#define PFX "cryptoapi: "
 
 MODULE_AUTHOR("Grupo SO");
 MODULE_DESCRIPTION("Simple CryptoAPI");
@@ -21,11 +25,28 @@ MODULE_LICENSE("GPL");
 
 static char *key = "";//Para receber parâmetros
 static char *iv = "";
+static int    majorNumber;              
+static int     dev_open(struct inode *, struct file *);//Para receber as funções
+static int     dev_release(struct inode *, struct file *);
+static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
+static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static struct class*  cryptoClass  = NULL; ///< The device-driver class struct pointer
+static struct device* cryptoDevice = NULL; ///< The device-driver device struct pointer
 
 module_param(key, charp, 0000);
 MODULE_PARM_DESC(key, "A string");
 module_param(iv, charp, 0000);
 MODULE_PARM_DESC(iv, "A string");
+
+static struct file_operations fops =
+{
+   .open = dev_open,
+   .read = dev_read,
+   .write = dev_write,
+   .release = dev_release,
+};
+
+
 
 static void
 hexdump(unsigned char *buf, unsigned int len)
@@ -38,7 +59,7 @@ hexdump(unsigned char *buf, unsigned int len)
         printk("\n");
 }
 
-static void
+static int
 cryptoapi_demo(void)
 {
         struct crypto_skcipher *tfm = NULL;
@@ -49,10 +70,11 @@ cryptoapi_demo(void)
 
         tfm = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
 
-        if (IS_ERR(tfm)) {
-                printk("could nor allocate skcipher tfm\n");
-                return;
-        }
+	if (IS_ERR(tfm)) 
+	{
+		printk("could nor allocate skcipher tfm\n");
+		return -1;
+	}
 
 	req = skcipher_request_alloc(tfm, GFP_KERNEL);
     	if (!req) {
@@ -81,26 +103,6 @@ cryptoapi_demo(void)
                 goto out;
         }
 
-	
-        memset(input,0, DATA_SIZE);
-
-
-	input[0] = 220;
-	input[1] = 27;
-	input[2] = 182;
-	input[3] = 72;
-	input[4] = 85;
-	input[5] = 119;
-	input[6] = 248;
-	input[7] = 74;
-	input[8] = 33;
-	input[9] = 19;
-	input[10] = 212;
-	input[11] = 201;
-	input[12] = 101;
-	input[13] = 223;
-	input[14] = 40;
-	input[15] = 60;
 
 
 	sg_init_one(&sg[0], input, DATA_SIZE);
@@ -113,8 +115,7 @@ cryptoapi_demo(void)
 
 
 	skcipher_request_set_crypt(req, &sg[0], &sg[1], 16, iv);
-	crypto_skcipher_decrypt(req);
-	crypto_skcipher_encrypt(req);
+
 	
 	//printk(KERN_ERR PFX "IN     AFTER: "); hexdump(input, 16);
         //printk(KERN_ERR PFX "OUTPUT AFTER: "); hexdump(output, 16);//data_size ultimo parametro
@@ -129,6 +130,48 @@ cryptoapi_demo(void)
 
 out:
         crypto_free_skcipher(tfm);
+	return 1;
+}
+
+
+static int dev_open(struct inode *inodep, struct file *filep){
+	printk("Cripto opened");
+	return 0;
+}
+
+static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
+int error_count = 0;
+// copy_to_user has the format ( * to, *from, size) and returns 0 on success
+	//error_count = copy_to_user(buffer, , DATA_SIZE);
+	if (error_count==0){            
+		printk("Sent cripto\n");
+		return 1;
+	}
+	else {
+		printk("Falhou no dev_read");
+		return -EFAULT;             
+	}
+}
+
+
+static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
+	char message[256];
+	sprintf(message, "%s(%zu letters)", buffer, len); 
+	if(message[0] == 'c')
+	{
+		printk("crypt");
+	}        
+	if(message[0] == 'd')
+	{
+		printk("decrypt");
+	}      
+	return 1;
+}
+
+
+static int dev_release(struct inode *inodep, struct file *filep){
+   printk(KERN_INFO "close dev\n");
+   return 0;
 }
 
 /* ====== Module init/exit ====== */
@@ -136,14 +179,46 @@ out:
 static int __init
 init_cryptoapi_demo(void)
 {
+
+	 majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
+	   if (majorNumber<0){
+	      printk(KERN_ALERT "EBBChar failed to register a major number\n");
+	      return majorNumber;
+	   }
+	   printk(KERN_INFO "EBBChar: registered correctly with major number %d\n", majorNumber);
+	 
+	   // Register the device class
+	   cryptoClass = class_create(THIS_MODULE, CLASS_NAME);
+	   if (IS_ERR(cryptoClass)){                // Check for error and clean up if there is
+	      unregister_chrdev(majorNumber, DEVICE_NAME);
+	      printk(KERN_ALERT "Failed to register device class\n");
+	      return PTR_ERR(cryptoClass);          // Correct way to return an error on a pointer
+	   }
+	   printk(KERN_INFO "EBBChar: device class registered correctly\n");
+	 
+	   // Register the device driver
+	   cryptoDevice = device_create(cryptoClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
+	   if (IS_ERR(cryptoDevice)){               // Clean up if there is an error
+	      class_destroy(cryptoClass);           // Repeated code but the alternative is goto statements
+	      unregister_chrdev(majorNumber, DEVICE_NAME);
+	      printk(KERN_ALERT "Failed to create the device\n");
+	      return PTR_ERR(cryptoDevice);
+	   }
+	   printk(KERN_INFO "EBBChar: device class created correctly\n"); // Made it! device was initialized
+
+
         cryptoapi_demo();
 
         return 0;
 }
 
 static void __exit
-exit_cryptoapi_demo(void)
 {
+device_destroy(ebbcharClass, MKDEV(majorNumber, 0));     // remove the device
+class_unregister(ebbcharClass);                          // unregister the device class
+class_destroy(ebbcharClass);                             // remove the device class
+unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
+exit_cryptoapi_demo(void)
 }
 
 module_init(init_cryptoapi_demo);
