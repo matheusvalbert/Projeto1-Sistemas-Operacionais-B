@@ -67,6 +67,7 @@ cryptoapi_demo(void)
         struct crypto_skcipher *tfm = NULL;
 	struct scatterlist sg[2];
 	struct skcipher_request *req;
+	struct hash_alg_common *hash = NULL;
         int ret;
         char *input, *output;
 
