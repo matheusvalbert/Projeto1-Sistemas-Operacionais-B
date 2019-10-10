@@ -67,11 +67,18 @@ cryptoapi_demo(void)
         struct crypto_skcipher *tfm = NULL;
 	struct scatterlist sg[2];
 	struct skcipher_request *req;
-	struct hash_alg_common *hash = NULL;
+	struct hash_desc desc;
         int ret;
+
+	char *plaintext = "plaintext goes here";
+	//size_t len = strlen(plaintext);
+	u8 hashval[20];
+	int myarr[4] = { 1, 3, 3, 7 };
+	size_t len = sizeof(myarr);
         char *input, *output;
 
         tfm = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
+	
 
 	if (IS_ERR(tfm)) 
 	{
@@ -108,8 +115,14 @@ cryptoapi_demo(void)
 
 
 
-	sg_init_one(&sg[0], input, DATA_SIZE);
+	sg_init_one(&sg[0], plaintext, 20);
 	sg_init_one(&sg[1], output, DATA_SIZE);
+
+	desc.tfm = crypto_alloc_hash("sha1", 0, CRYPTO_ALG_ASYNC);
+
+	crypto_hash_init(&desc);
+	crypto_hash_update(&desc, &sg, 20);
+	crypto_hash_final(&desc, hashval);
 
 
 	//printk(KERN_ERR PFX "IN B4 : "); hexdump(input, 16);
@@ -132,7 +145,9 @@ cryptoapi_demo(void)
         kfree(input);
 
 out:
+	crypto_free_hash(desc.tfm);
         crypto_free_skcipher(tfm);
+
 	return 1;
 }
 
