@@ -1,8 +1,8 @@
-obj-m+=cryptoapi.o
+obj-m+=	crypto.o
  
 all:
 	make -C /lib/modules/$(shell uname -r)/build/ M=$(PWD) modules
-	$(CC) inter.c -o inter
+	 $(CC) cryptoteste.c -o test
 clean:
 	make -C /lib/modules/$(shell uname -r)/build/ M=$(PWD) clean
-	rm inter
+	rm test
