@@ -9,7 +9,8 @@
 #include <linux/stat.h>   
 #include <linux/device.h>       
 #include <linux/fs.h>             
-#include <linux/uaccess.h>       
+#include <linux/uaccess.h>   
+#include <linux/mutex.h>    
 #define  DEVICE_NAME "crypto"  
 #define  CLASS_NAME  "cryptoapi"        
 
@@ -32,6 +33,16 @@ static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
 static struct class*  cryptoClass  = NULL; ///< The device-driver class struct pointer
 static struct device* cryptoDevice = NULL; ///< The device-driver device struct pointer
+static char   msg[256] = {0};
+static int tamanhomsg = 0;
+static DEFINE_MUTEX(crypto_mutex);
+
+
+static	struct crypto_skcipher *tfm = NULL;
+static	struct scatterlist sg[2];
+static	struct skcipher_request *req = NULL;
+static  int ret;
+static  char *input, *output;
 
 module_param(key, charp, 0000);
 MODULE_PARM_DESC(key, "A string");
@@ -60,16 +71,10 @@ hexdump(unsigned char *buf, unsigned int len)
 }
 
 static int
-cryptoapi_demo(void)
+cryptoapi_demo(char operacao)
 {
-        struct crypto_skcipher *tfm = NULL;
-	struct scatterlist sg[2];
-	struct skcipher_request *req;
-        int ret;
-        char *input, *output;
-
+	int i=0;
         tfm = crypto_alloc_skcipher ("cbc(aes)", 0, 0);
-
 	if (IS_ERR(tfm)) 
 	{
 		printk("could nor allocate skcipher tfm\n");
@@ -82,7 +87,7 @@ cryptoapi_demo(void)
         	goto out;
     	}
 
-        ret = crypto_skcipher_setkey(tfm, key, sizeof(key));
+        ret = crypto_skcipher_setkey(tfm, key, strlen(key));
 
         if (ret) {
                 printk(KERN_ERR PFX "error ret\n");
@@ -92,59 +97,60 @@ cryptoapi_demo(void)
         input = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!input) {
                 printk(KERN_ERR PFX "kmalloc(input) failed\n");
-		kfree(input);
                 goto out;
         }
 
         output = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!output) {
                 printk(KERN_ERR PFX "kmalloc(output) failed\n");
-                kfree(output);
+                kfree(input);
                 goto out;
         }
-
-
-
+	while(i!=16)
+	{
+		input[i] = msg[i];
+		i++;
+	}
+	i=0;
 	sg_init_one(&sg[0], input, DATA_SIZE);
 	sg_init_one(&sg[1], output, DATA_SIZE);
-
-
-	//printk(KERN_ERR PFX "IN B4 : "); hexdump(input, 16);
-	//printk(KERN_ERR PFX "OUT B4: "); hexdump(encrypted, 16);//data_size ultimo parametro
-
-
-
 	skcipher_request_set_crypt(req, &sg[0], &sg[1], 16, iv);
-
-	
-	//printk(KERN_ERR PFX "IN     AFTER: "); hexdump(input, 16);
-        //printk(KERN_ERR PFX "OUTPUT AFTER: "); hexdump(output, 16);//data_size ultimo parametro
-
-        if (memcmp(input, output, DATA_SIZE) != 0)
-                printk(KERN_ERR PFX "FAIL: input buffer != decrypted buffer\n");
-        else
-                printk(KERN_ERR PFX "PASS: encryption/decryption verified\n");
-
+	if(operacao == 'c')
+	{
+		crypto_skcipher_encrypt(req);
+		printk(KERN_ERR PFX "input anterior: "); hexdump(input, 16);
+		printk(KERN_ERR PFX "output anterior: "); hexdump(output, 16);
+	}
+	if(operacao == 'd')
+	{
+		crypto_skcipher_decrypt(req);
+		printk("decrypted");
+		printk(KERN_ERR PFX "output decriptada: "); hexdump(output, 16);
+	}
+	while(i!=16)
+	{
+		msg[i] = output[i];
+		i++;
+	}
         kfree(output);
         kfree(input);
 
 out:
         crypto_free_skcipher(tfm);
+	skcipher_request_free(req);
 	return 1;
 }
 
 
 static int dev_open(struct inode *inodep, struct file *filep){
-	printk("Cripto opened");
 	return 0;
 }
 
 static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
-int error_count = 0;
+	int error_count = 0;
 // copy_to_user has the format ( * to, *from, size) and returns 0 on success
-	//error_count = copy_to_user(buffer, , DATA_SIZE);
+	error_count = copy_to_user(buffer,msg, tamanhomsg);
 	if (error_count==0){            
-		printk("Sent cripto\n");
 		return 1;
 	}
 	else {
@@ -155,23 +161,62 @@ int error_count = 0;
 
 
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
-	char message[256];
-	sprintf(message, "%s(%zu letters)", buffer, len); 
-	if(message[0] == 'c')
-	{
-		printk("crypt");
-	}        
-	if(message[0] == 'd')
-	{
-		printk("decrypt");
-	}      
-	return 1;
+	int i = 0;
+	
+	if(!mutex_trylock(&crypto_mutex)){    /// Try to acquire the mutex (i.e., put the lock on/down)
+                                          /// returns 1 if successful and 0 if there is contention
+      		printk(KERN_ALERT "EBBChar: Device in use by another process");
+      		return -EBUSY;
+   	}
+	else {
+		sprintf(msg, "%s", buffer); 	
+		if(msg[0] == 'c')
+		{
+			tamanhomsg = strlen(msg);
+			while(i!=17)
+			{
+				msg[i]=msg[i+1];
+				i++;
+			}
+			cryptoapi_demo('c');
+			cryptoapi_demo('d');
+		}        
+		if(msg[0] == 'd')
+		{
+			msg[0] = 11;
+			msg[1] = 155;
+			msg[2] = 21;
+			msg[3] = 218;
+			msg[4] = 75;
+			msg[5] = 68;
+			msg[6] = 160;
+			msg[7] = 245;
+			msg[8] = 21;
+			msg[9] = 29;
+			msg[10] = 207;
+			msg[11] = 196;
+			msg[12] = 192;
+			msg[13] = 31;
+			msg[14] = 53;
+			msg[15] = 213;
+			/*while(i!=17)
+			{
+				msg[i]=msg[i+1];
+				i++;
+			}*/
+			cryptoapi_demo('d');
+		}      
+		return 1;
+	}
+        return 0;
+	
 }
 
 
 static int dev_release(struct inode *inodep, struct file *filep){
-   printk(KERN_INFO "close dev\n");
-   return 0;
+	mutex_unlock(&crypto_mutex);
+
+	return 0;
 }
 
 /* ====== Module init/exit ====== */
@@ -206,9 +251,7 @@ init_cryptoapi_demo(void)
 		printk(KERN_ALERT "Failed to create the device\n");
 		return PTR_ERR(cryptoDevice);
 	}
-
-
-        cryptoapi_demo();
+	mutex_init(&crypto_mutex);
 
         return 0;
 }
@@ -220,6 +263,7 @@ exit_cryptoapi_demo(void)
 	class_unregister(cryptoClass);                          // unregister the device class
 	class_destroy(cryptoClass);                             // remove the device class
 	unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
+	mutex_destroy(&crypto_mutex);
 }
 
 module_init(init_cryptoapi_demo);
