@@ -13,16 +13,43 @@
 MODULE_AUTHOR("Projeto1 SO_B");
 MODULE_DESCRIPTION("crypto api");
 MODULE_LICENSE("GPL");
+#define  DEVICE_NAME "crypto"
+#define  CLASS_NAME  "cryptoapi"
 
 #define DATA_SIZE       16
 
+///////////////////////////////////////////////////////////////////////////
+
 static char *key_get = "";
 static char *iv_get = "";
+
+
+static int    majorNumber;              
+static int     dev_open(struct inode *, struct file *);
+static int     dev_release(struct inode *, struct file *);
+static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
+static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
+static struct class*  cryptoClass  = NULL;
+static struct device* cryptoDevice = NULL;
+
+
+static char   msg[256] = {0};
+static int tamanhomsg = 0;
 
 module_param(key_get, charp, 0000);
 MODULE_PARM_DESC(key_get, "A string");
 module_param(iv_get, charp, 0000);
 MODULE_PARM_DESC(iv_get, "A string");
+
+static struct file_operations fops =
+{
+   .open = dev_open,
+   .read = dev_read,
+   .write = dev_write,
+   .release = dev_release,
+};
+
+///////////////////////////////////////////////////////////////////////////
 
 struct tcrypt_result {
 	struct completion completion;
@@ -50,16 +77,18 @@ hexdump(unsigned char *buf, unsigned int len)
         printk("\n");
 }
 
-static int do_test_cipher(int way)
+static int cipher(int way)
 {
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	char key[16], iv[16];
+	int i = 0;
 	int ret;
 	char *input = NULL;
 	struct tcrypt_result result;
-	int i = 0;
+	
+//////////////////////////////////////////////////////////////////////
 
 	while(i != 16) {
 	
@@ -67,6 +96,8 @@ static int do_test_cipher(int way)
 		iv[i] = iv_get[i];
 		i++;
 	}
+
+///////////////////////////////////////////////////////////////////////
 
 	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
@@ -96,6 +127,14 @@ static int do_test_cipher(int way)
                 goto out;
         }
 
+	i=0;
+	while(i!=16)
+	{
+		input[i] = msg[i];
+		i++;
+	}
+	i=0;
+
 	sg_init_one(&sg, input, DATA_SIZE);
 
 	skcipher_request_set_crypt(req, &sg, &sg, DATA_SIZE, iv);
@@ -103,53 +142,23 @@ static int do_test_cipher(int way)
 
 	if (way == 0) {
 
-		input[0] = 0;
-		input[1] = 1;
-		input[2] = 2;
-		input[3] = 3;
-		input[4] = 4;
-		input[5] = 5;
-		input[6] = 6;
-		input[7] = 7;
-		input[8] = 8;
-		input[9] = 9;
-		input[10] = 0xa;
-		input[11] = 0xb;
-		input[12] = 0xc;
-		input[13] = 0xd;
-		input[14] = 0xe;
-		input[15] = 0xf;
-
 		printk("pre input: "); hexdump(input, DATA_SIZE);
 
 		ret = crypto_skcipher_encrypt(req);
 
 		printk("pos input: "); hexdump(input, DATA_SIZE);
 	}
-	else {
-
-		input[0] = 230;
-		input[1] = 109;
-		input[2] = 69;
-		input[3] = 124;
-		input[4] = 121;
-		input[5] = 187;
-		input[6] = 210;
-		input[7] = 186;
-		input[8] = 117;
-		input[9] = 130;
-		input[10] = 169;
-		input[11] = 120;
-		input[12] = 165;
-		input[13] = 58;
-		input[14] = 113;
-		input[15] = 141;
+	else if(way == 1){
 
 		printk("pre output: "); hexdump(input, DATA_SIZE);
 
 		ret = crypto_skcipher_decrypt(req);
 
 		printk("pos output: "); hexdump(input, DATA_SIZE);
+	}
+	else {
+
+		goto out;
 	}
 
 	switch (ret) {
@@ -159,6 +168,12 @@ static int do_test_cipher(int way)
 	case -EBUSY:
 		ret = wait_for_completion_interruptible(&result.completion);
 		break;
+	}
+
+	while(i!=16)
+	{
+		msg[i] = input[i];
+		i++;
 	}
 
 error_req:
@@ -172,18 +187,103 @@ out:
 	return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+static int dev_open(struct inode *inodep, struct file *filep){
+	return 0;
+}
+
+static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
+	int error_count = 0;
+// copy_to_user has the format ( * to, *from, size) and returns 0 on success
+	error_count = copy_to_user(buffer,msg, tamanhomsg);
+	if (error_count==0){            
+		return 1;
+	}
+	else {
+		printk("Falhou no dev_read");
+		return -EFAULT;             
+	}
+}
+
+static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
+	int i = 0;
+	
+	if(1 == 0){    /// Try to acquire the mutex (i.e., put the lock on/down)
+                                          /// returns 1 if successful and 0 if there is contention
+      		printk(KERN_ALERT "CryptoAPI: Device in use by another process");
+      		return -EBUSY;
+   	}
+	else {
+		sprintf(msg, "%s", buffer); 	
+		if(msg[0] == 'c')
+		{
+			tamanhomsg = strlen(msg);
+			while(i!=17)
+			{
+				msg[i]=msg[i+1];
+				i++;
+			}
+			cipher(0);
+		}        
+		else if(msg[0] == 'd')
+		{
+			while(i!=17)
+			{
+				msg[i]=msg[i+1];
+				i++;
+			}
+			cipher(1);
+		}      
+		return 1;
+	}
+        return 0;
+	
+}
+
+
+static int dev_release(struct inode *inodep, struct file *filep){
+
+	return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 static int __init cryptotest_init(void)
 {
-	printk("encrypt");
-	do_test_cipher(0);
-	printk("decrypt");
-	do_test_cipher(1);
+	majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
+	if (majorNumber<0)
+	{
+		printk(KERN_ALERT "Crypto failed to register a major number\n");
+	      return majorNumber;
+	}
+	 
+	cryptoClass = class_create(THIS_MODULE, CLASS_NAME);
+	if (IS_ERR(cryptoClass))
+	{              
+		unregister_chrdev(majorNumber, DEVICE_NAME);
+		printk(KERN_ALERT "Failed to register device class\n");
+		return PTR_ERR(cryptoClass);
+	}
+	 
+	cryptoDevice = device_create(cryptoClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
+	if (IS_ERR(cryptoDevice))
+	{               
+		class_destroy(cryptoClass);
+		unregister_chrdev(majorNumber, DEVICE_NAME);
+		printk(KERN_ALERT "Failed to create the device\n");
+		return PTR_ERR(cryptoDevice);
+	}
 
 	return 0;
 }
 
 static void __exit cryptotest_exit(void)
 {
+	device_destroy(cryptoClass, MKDEV(majorNumber, 0));
+	class_unregister(cryptoClass);
+	class_destroy(cryptoClass);
+	unregister_chrdev(majorNumber, DEVICE_NAME);  
 }
 
 module_init(cryptotest_init);
