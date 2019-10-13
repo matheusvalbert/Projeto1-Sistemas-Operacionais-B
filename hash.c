@@ -14,6 +14,8 @@
 
 MODULE_LICENSE("GPL");
 
+#define DATA_SIZE 16
+
 struct sdesc {
     struct shash_desc shash;
     char ctx[];
@@ -29,64 +31,43 @@ static void hexdump(unsigned char *buf, unsigned int len) {
         printk("\n");
 }
 
+static int hash(void) {
 
-static struct sdesc *init_sdesc(struct crypto_shash *alg)
-{
-    struct sdesc *sdesc;
-    int size;
+	struct crypto_shash *alg;
+	struct sdesc *sdesc;
+	char data[1] = {"a"};
+	char digest[40];
+	int ret, size;
+	
+	alg = crypto_alloc_shash("sha1", 0, 0);
+	if (IS_ERR(alg)) {
+		return PTR_ERR(alg);
+	}
 
-    size = sizeof(struct shash_desc) + crypto_shash_descsize(alg);
-    sdesc = kmalloc(size, GFP_KERNEL);
-    if (!sdesc)
-        return ERR_PTR(-ENOMEM);
-    sdesc->shash.tfm = alg;
-    return sdesc;
-}
+	size = sizeof(struct shash_desc) + crypto_shash_descsize(alg);
+	sdesc = kmalloc(size, GFP_KERNEL);
+	
+	sdesc->shash.tfm = alg;
 
-static int calc_hash(struct crypto_shash *alg,
-             const unsigned char *data, unsigned int datalen,
-             unsigned char *digest)
-{
-    struct sdesc *sdesc;
-    int ret;
-    sdesc = init_sdesc(alg);
-    if (IS_ERR(sdesc)) {
-        pr_info("can't alloc sdesc\n");
-        return PTR_ERR(sdesc);
-    }
+	if (IS_ERR(sdesc)) {
+		pr_info("can't alloc sdesc\n");
+		return PTR_ERR(sdesc);
+	}
 
-    ret = crypto_shash_digest(&sdesc->shash, data, datalen, digest);
-    kfree(sdesc);
+	ret = crypto_shash_digest(&sdesc->shash, data, DATA_SIZE, digest);
 
-    return ret;
-}
-
-static int test_hash(const unsigned char *data, unsigned int datalen,
-             unsigned char *digest)
-{
-    struct crypto_shash *alg;
-    char *hash_alg_name = "sha1";
-    int ret;
-
-    alg = crypto_alloc_shash(hash_alg_name, 0, 0);
-    if (IS_ERR(alg)) {
-            pr_info("can't alloc alg %s\n", hash_alg_name);
-            return PTR_ERR(alg);
-    }
-    ret = calc_hash(alg, data, datalen, digest);
-    crypto_free_shash(alg);
-    return ret;
+	printk("SHA1: "); hexdump(digest, 20);
+	
+	kfree(sdesc);
+	crypto_free_shash(alg);
+	return ret;
 }
 
 static int __init
 init_cryptoapi_demo(void)
 {
-	char data[1] = {"a"};
-	char digest[100];
 
-	test_hash(data, 1, digest);
-
-	printk("OUT: "); hexdump(digest, 20);
+	hash();
 	
         return 0;
 }
