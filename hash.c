@@ -19,6 +19,17 @@ struct sdesc {
     char ctx[];
 };
 
+static void hexdump(unsigned char *buf, unsigned int len) {
+
+        while (len--) {
+
+		printk("%02x", *buf++);
+	}
+
+        printk("\n");
+}
+
+
 static struct sdesc *init_sdesc(struct crypto_shash *alg)
 {
     struct sdesc *sdesc;
@@ -38,19 +49,14 @@ static int calc_hash(struct crypto_shash *alg,
 {
     struct sdesc *sdesc;
     int ret;
-    u8 out[10];
-    u8 in[10] = {"aaaaaaaaaa"};
     sdesc = init_sdesc(alg);
     if (IS_ERR(sdesc)) {
         pr_info("can't alloc sdesc\n");
         return PTR_ERR(sdesc);
     }
 
-    ret = crypto_shash_digest(&sdesc->shash, in, 10, out);
+    ret = crypto_shash_digest(&sdesc->shash, data, datalen, digest);
     kfree(sdesc);
-
-
-    printk("%p", out);
 
     return ret;
 }
@@ -75,10 +81,12 @@ static int test_hash(const unsigned char *data, unsigned int datalen,
 static int __init
 init_cryptoapi_demo(void)
 {
-	char data[10] = {"ola"};
+	char data[1] = {"a"};
 	char digest[100];
 
-	test_hash(data, 10, digest);
+	test_hash(data, 1, digest);
+
+	printk("OUT: "); hexdump(digest, 20);
 	
         return 0;
 }
