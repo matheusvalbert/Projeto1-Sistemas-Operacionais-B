@@ -4,66 +4,158 @@
 #include<fcntl.h>
 #include<string.h>
 #include<unistd.h>
+#include <stdio_ext.h>
  
-#define BUFFER_LENGTH 256               ///< The buffer length (crude but fine)
-static char receive[BUFFER_LENGTH];     ///< The receive buffer from the LKM
- 
-int main(){
-	int ret, fd, i=0;
-	char stringToSend[BUFFER_LENGTH];
-	fd = open("/dev/crypto", O_RDWR);             // Open the device with read/write access
+#define BUFFER_LENGTH 256              
+static char receive[BUFFER_LENGTH];
+    
+int hex_to_int(char c){
+        int first = c / 16 - 3;
+        int second = c % 16;
+        int result = first*10 + second;
+        if(result > 9) result--;
+        return result;
+}
+
+int hex_to_ascii(char c, char d){
+        int high = hex_to_int(c) * 16;
+        int low = hex_to_int(d);
+        return high+low;
+}
+
+
+
+void hexdump(unsigned char *buf, unsigned int len)
+{
+        while (len--)
+	{
+	        printf("%02x", *buf++);
+	}
+
+	printf("\n");
+}
+
+int main()
+{
+	int ret, fd, i=0, flag = 0, op;
+	char stringToSend[BUFFER_LENGTH], stringReceive[BUFFER_LENGTH];
+	char buf;
+	int tamanhostr;
+	fd = open("/dev/crypto", O_RDWR);             // Abre o device
 	if (fd < 0){
 		perror("Failed to open the device...");
 		return errno;
 	}
-  
-	strcpy(stringToSend,"cABCDEF");
-	ret = write(fd, stringToSend, strlen(stringToSend)); // Send the string to the LKM
+	
+	do
+	{
+		printf("Choose option:\n");
+		printf("	1 - String\n");
+		printf("	2 - Hexa\n");
+		scanf("%d",&op);
+		if(op==1 || op==2)
+			flag=1;
+		else
+			flag=0;
+		
+	}while(flag==0);
+
+	if(op==1)
+	{
+		printf("String:");
+		__fpurge(stdin);
+    		fgets(stringReceive, sizeof(stringReceive), stdin);
+
+    		tamanhostr = strlen(stringReceive);
+    		if(stringReceive[tamanhostr-1]=='\n')
+        		stringReceive[--tamanhostr] = '\0';
+		stringToSend[0]=stringReceive[0];
+    		for(i = 0; i<tamanhostr-1; i++)
+		{
+        		sprintf(stringToSend+i*2+1, "%02X", stringReceive[i+1]);
+    		}
+    		printf("String to send(hexa): %s\n", stringToSend);
+	}
+	else if(op==2)
+	{
+		printf("Hexa:");
+		__fpurge(stdin);
+		fgets(stringToSend, sizeof(stringToSend), stdin);
+		tamanhostr = strlen(stringToSend);
+		printf("String to send(hexa): %s", stringToSend);
+		for(i = 1; i<tamanhostr; i++)
+		{
+	                if(i % 2 != 1)
+			{
+                        	printf("%c", hex_to_ascii(buf, stringToSend[i]));
+                	}
+			else
+			{
+                        	buf = stringToSend[i];
+                	}
+        	}
+		printf("\n");
+	}
+	else
+	{
+		return 0;
+	}
+	
+	ret = write(fd, stringToSend, strlen(stringToSend)); //Escrever no device
 	if (ret < 0){
 		perror("Failed to write the message to the device.");
 		return errno;
 	}
  
-	ret = read(fd, receive, BUFFER_LENGTH);        // Read the response from the LKM
+	ret = read(fd, receive, BUFFER_LENGTH);        // Receber os dados do device
 	if (ret < 0){
 		perror("Failed to read the message from the device.");
 		return errno;
 	}
-	for(i=0;i<16;i++)
-	printf("The enviada message is: [%X]\n", receive[i]);
+	tamanhostr = strlen(stringToSend)-1;
+	printf("Mensagem criptada: ");
+	for(i=0;i<tamanhostr;i++)
+		printf("%02x", receive[i]);
 
-	stringToSend[0] = 'd';
-	stringToSend[1] = 0x41;
-	stringToSend[2] = 0x42;
-	stringToSend[3] = 0x43;
-	stringToSend[5] = 0x44;
-	stringToSend[6] = 0x45;
-	stringToSend[7] = 0x46;
-
-	sleep(10);
-
-
-
-	/*stringToSend[0] = 'd';
+	stringToSend[0] = 'd';//descriptografar o resultado da string criptografada acima
   	for(i = 0; receive[i]; i++)
 		stringToSend[i+1] = receive[i];
-	stringToSend[i+1] = '\0';*/
-	//printf("%s\n", stringToSend);
+	stringToSend[i+1] = '\0';
 
 
-	ret = write(fd, stringToSend, strlen(stringToSend)); // Send the string to the LKM
+	ret = write(fd, stringToSend, strlen(stringToSend)); // Escrever no device
 	if (ret < 0){
 		perror("Failed to write the message to the device.");
 		return errno;
 	}
  
-	ret = read(fd, receive, BUFFER_LENGTH);        // Read the response from the LKM
+	ret = read(fd, receive, BUFFER_LENGTH);        // Receber os dados do device
 	if (ret < 0){
 		perror("Failed to read the message from the device.");
 		return errno;
 	}
-	for(i=0;i<16;i++)
-	printf("The recebida message is: [%c]\n", receive[i]);
+	tamanhostr = strlen(stringToSend)-1;
+	printf("\nMensagem decriptada: ");
+	for(i=0;i<tamanhostr;i++)
+		printf("%c\n", receive[i]);
+
+	strcpy(stringToSend,"hteste");//Teste do Hashe
+	ret = write(fd, stringToSend, strlen(stringToSend)); // Escrever no device
+	if (ret < 0){
+		perror("Failed to write the message to the device.");
+		return errno;
+	}
+ 
+	ret = read(fd, receive, BUFFER_LENGTH);        // Receber os dados do device
+	if (ret < 0){
+		perror("Failed to read the message from the device.");
+		return errno;
+	}
+	printf("Hash: ");
+	hexdump(receive,20);
+	/*for(i=0;i<20;i++)
+		printf("[%2x]", receive[i]);*/
+	close(fd);
    return 0;
 }
 
