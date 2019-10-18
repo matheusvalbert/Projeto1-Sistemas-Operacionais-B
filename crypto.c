@@ -37,9 +37,9 @@ static char *key_getu = "";
 static char *iv_get = "";
 
 module_param(key_getu, charp, 0000);
-MODULE_PARM_DESC(key_getu, "A string");
+MODULE_PARM_DESC(key_getu, "00000000000000000000");
 module_param(iv_get, charp, 0000);
-MODULE_PARM_DESC(iv_get, "A string");
+MODULE_PARM_DESC(iv_get, "00000000000000000000");
 
 static struct file_operations fops =
 {
@@ -87,21 +87,29 @@ static int cipher(int way,int numop)
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
 	struct scatterlist sg;
-	char key[16], iv[16];
+	char key[20], iv[20];
 	int i = 0;
 	int ret;
 	char *input = NULL;
 	struct tcrypt_result result;
 	
 //////////////////////////////////////////////////////////////////////
-
 	while(i != 16) {
 	
 		key[i] = key_getu[i];
+		if(key[i]=='\0')
+		{
+			key[i]='0';
+		}
 		iv[i] = iv_get[i];
+		if(iv[i]=='\0')
+		{
+			iv[i]='0';
+		}
 		i++;
 	}
-
+	key[16]='\0';
+	iv[16]='\0';
 ///////////////////////////////////////////////////////////////////////
 
 	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
@@ -188,7 +196,8 @@ error_tfm:
 	return ret;
 out:
 	kfree(input);
-
+	key[0]='\0';
+	iv[0]='\0';
 	return 0;
 }
 
@@ -312,6 +321,7 @@ static int dev_release(struct inode *inodep, struct file *filep){
 
 static int __init cryptotest_init(void)
 {
+	
 	majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
 	if (majorNumber<0)
 	{
