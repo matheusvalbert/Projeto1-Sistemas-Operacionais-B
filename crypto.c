@@ -61,6 +61,53 @@ struct tcrypt_result {
 	int err;
 };
 
+char convert(char op) {
+
+	switch(op) {
+
+	case '0':
+		return 0x0;
+	case '1':
+		return 0x1;
+	case '2':
+		return 0x2;
+	case '3':
+		return 0x3;
+	case '4':
+		return 0x4;
+	case '5':
+		return 0x5;
+	case '6':
+		return 0x6;
+	case '7':
+		return 0x7;
+	case '8':
+		return 0x8;
+	case '9':
+		return 0x9;
+	case 'A':
+	case 'a':
+		return 0xa;
+	case 'B':
+	case 'b':
+		return 0xb;
+	case 'C':
+	case 'c':
+		return 0xc;
+	case 'D':
+	case 'd':
+		return 0xd;
+	case 'E':
+	case 'e':
+		return 0xe;
+	case 'F':
+	case 'f':
+		return 0xf;
+	}
+
+	return 0;
+}
+
 static void test_skcipher_cb(struct crypto_async_request *req, int error)
 {
 	struct tcrypt_result *result = req->data;
@@ -82,7 +129,7 @@ hexdump(unsigned char *buf, unsigned int len)
         printk("\n");
 }
 
-static int cipher(int way,int numop)
+static int cipher(int way,int numop,char ms[])
 {
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
@@ -92,7 +139,6 @@ static int cipher(int way,int numop)
 	int ret;
 	char *input = NULL;
 	struct tcrypt_result result;
-	
 //////////////////////////////////////////////////////////////////////
 	while(i != 16) {
 	
@@ -110,8 +156,7 @@ static int cipher(int way,int numop)
 	}
 	key[16]='\0';
 	iv[16]='\0';
-///////////////////////////////////////////////////////////////////////
-
+//////////////////////////////////////////////////////////////////////
 	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
 		ret = PTR_ERR(tfm);
@@ -143,7 +188,7 @@ static int cipher(int way,int numop)
 	i=0;
 	while(i!=16)
 	{
-		input[i] = msg[i+16*numop];
+		input[i] = ms[i+16*numop];
 		i++;
 	}
 	i=0;
@@ -186,6 +231,12 @@ static int cipher(int way,int numop)
 	while(i!=16)
 	{
 		msg[i+16*numop] = input[i];
+		if(input[i] == 0)
+		{
+			tamanhomsg = i+16*numop;
+		}
+		else
+			tamanhomsg = i+16*numop+1;
 		i++;
 	}
 
@@ -203,10 +254,10 @@ out:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static int hash(void) {
+static int hash(char input[]) {
 
 	struct crypto_shash *alg;
-	struct sdesc *sdesc;
+	struct sdesc *sdesc; 
 	char digest[60];
 	int ret, size;
 	alg = crypto_alloc_shash("sha1", 0, 0);
@@ -224,7 +275,7 @@ static int hash(void) {
 		return PTR_ERR(sdesc);
 	}
 
-	ret = crypto_shash_digest(&sdesc->shash, msg, tamanhomsg, digest);
+	ret = crypto_shash_digest(&sdesc->shash, input, tamanhomsg, digest);
 	tamanhomsg = 20;
 	printk("SHA1: "); hexdump(digest, 20);
 	strcpy(msg,digest);
@@ -233,7 +284,7 @@ static int hash(void) {
 	return ret;
 }
 
-////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////// f04d5c594c0de21b11a194844305ff3e
 
 static int dev_open(struct inode *inodep, struct file *filep){
 	if(!mutex_trylock(&crypto_mutex)){    /// Try to acquire the mutex (i.e., put the lock on/down)
@@ -246,6 +297,7 @@ static int dev_open(struct inode *inodep, struct file *filep){
 
 static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
 	int error_count = 0;
+	//int numop;
 // copy_to_user has the format ( * to, *from, size) and returns 0 on success
 	error_count = copy_to_user(buffer,msg, tamanhomsg);
 	if (error_count==0){            
@@ -258,12 +310,14 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 }
 
 static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
-	int i = 0;
+	int i = 0, j=0;
 	int numop = 0;
+	char *input = NULL;
 
 	sprintf(msg, "%s", buffer); 	
 	if(msg[0] == 'c')
 	{
+
 		while(msg[i+1]!='\0')
 		{
 			msg[i]=msg[i+1];
@@ -271,13 +325,48 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
 		}
 		msg[i] = '\0';
 		tamanhomsg = strlen(msg);
-		numop = tamanhomsg/16;
-		i = 0;
-		while(i!=numop)
-		{
-			cipher(0,i);
+
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+		        printk("kmalloc(input) failed\n");
+			goto outc;
+		}
+
+		i=0;
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
 			i++;
 		}
+
+		i=0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		
+		while(i % 16 != 0)
+		{
+			
+			input[i] = 0x00;	
+			i++;
+		}
+		input[i] = '\0';
+		tamanhomsg = i;
+		i = 0;
+		numop = tamanhomsg/16;
+		while(i!=numop)
+		{
+
+			cipher(0,i,input);
+			i++;
+		}		
+
+outc:		kfree(input);
+
 	}        
 	else if(msg[0] == 'd')
 	{
@@ -288,13 +377,40 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
 		}
 		msg[i] = '\0';
 		tamanhomsg = strlen(msg);
-		numop = tamanhomsg/16;
-		i = 0;
-		while(i!=numop)
-		{
-			cipher(1,i);
+
+
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+		        printk("kmalloc(input) failed\n");
+			goto outd;
+		}
+
+		i=0;
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
 			i++;
 		}
+
+		
+		i=0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		tamanhomsg = i;
+
+		i = 0;
+		numop = tamanhomsg/16;
+		while(i!=numop)
+		{
+			cipher(1,i,input);
+			i++;
+		}
+outd:		kfree(input);
 	}   
 	else if(msg[0] == 'h')
 	{
@@ -305,7 +421,35 @@ static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, lof
 		}
 		msg[i] = '\0';
 		tamanhomsg = strlen(msg);
-		hash();
+
+
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+		        printk("kmalloc(input) failed\n");
+			goto outd;
+		}
+
+		i=0;
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
+			i++;
+		}
+
+		
+		i = 0;
+		j = 0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		input[i] = '\0';
+		tamanhomsg = strlen(input);
+		printk("tamanho %i", tamanhomsg);hexdump(input,tamanhomsg);
+		hash(input);
 	} 
 	return 1;
 	
