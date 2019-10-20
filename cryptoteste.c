@@ -7,23 +7,9 @@
 #include <stdio_ext.h>
  
 #define BUFFER_LENGTH 256              
-static char receive[BUFFER_LENGTH];
     
-int hex_to_int(char c){
-        int first = c / 16 - 3;
-        int second = c % 16;
-        int result = first*10 + second;
-        if(result > 9) result--;
-        return result;
-}
 
-int hex_to_ascii(char c, char d){
-        int high = hex_to_int(c) * 16;
-        int low = hex_to_int(d);
-        return high+low;
-}
-
-char convert(char op) {
+char convert(char op) {//Transformacao de char para numero
 	switch(op) {
 
 	case '0':
@@ -84,6 +70,7 @@ int main()
 	int ret, fd, i=0,j=0, flag = 0, flag2 = 0;
 	char op, op2;
 	char stringToSend[BUFFER_LENGTH], stringReceive[BUFFER_LENGTH], stringaux[BUFFER_LENGTH];
+	char receive[BUFFER_LENGTH];
 	char buf;
 	int tamanhostr,tamanhoaux;
 	fd = open("/dev/crypto", O_RDWR);             // Abre o device
@@ -112,6 +99,7 @@ int main()
 	    		if(stringReceive[tamanhostr-1]=='\n')
 				stringReceive[--tamanhostr] = '\0';
 			stringToSend[0]=stringReceive[0];
+			//Realiza a conversao da string para uma string com os numeros em hexa
 			if(stringToSend[0] == 'c' || stringToSend[0] == 'h')
 			{
 			    	for(i = 0; i<tamanhostr-1; i++)
@@ -119,23 +107,22 @@ int main()
 					sprintf(stringToSend+i*2+1, "%02X", stringReceive[i+1]);
 			    	}
 				stringToSend[i*2+1]='\0';
-			    	printf("String to send(hexa): %s\n", stringToSend);
+			    	printf("String enviada: %s\n", stringToSend);
 			}
-			else
-				strcpy(stringToSend,stringReceive);
-			printf("%s\n", stringToSend);
-			ret = write(fd, stringToSend, strlen(stringToSend)); //Escrever no device
+			//Envia os dados para o device
+			ret = write(fd, stringToSend, strlen(stringToSend)); 
 			if (ret < 0){
 					perror("Failed to write the message to the device.");
 					return errno;
 			}
-				 
-			ret = read(fd, receive, BUFFER_LENGTH);        // Receber os dados do device
+			// Recebe os dados do device	 
+			ret = read(fd, receive, BUFFER_LENGTH);        
 			if (ret < 0){
 					perror("Failed to read the message from the device.");
 					return errno;
 			}
 			tamanhostr = strlen(receive);
+			//Impressoes diferentes dependendo do caso
 			switch(stringToSend[0])
 			{
 				case 'c':
@@ -157,21 +144,21 @@ int main()
 			__fpurge(stdin);
 			fgets(stringToSend, sizeof(stringToSend), stdin);
 			tamanhostr = strlen(stringToSend);
-			printf("String to send(hexa): %s", stringToSend);
-
-			ret = write(fd, stringToSend, strlen(stringToSend)); //Escrever no device
+			printf("String enviada: %s", stringToSend);
+			//Envia os dados para o device
+			ret = write(fd, stringToSend, strlen(stringToSend)); 
 			if (ret < 0){
 					perror("Failed to write the message to the device.");
 					return errno;
 			}
-				 
-			ret = read(fd, receive, BUFFER_LENGTH);        // Receber os dados do device
+			//Recebe os dados do device	 
+			ret = read(fd, receive, BUFFER_LENGTH);        
 			if (ret < 0){
 					perror("Failed to read the message from the device.");
 					return errno;
 			}
 			tamanhostr = strlen(receive);			
-
+			//Impressoes diferentes dependendo do caso
 			switch(stringToSend[0])
 			{
 				case 'c':
@@ -181,6 +168,7 @@ int main()
 				case 'd':
 					do
 					{
+						//Permite a escolha dos numeros em hexa digitados ou em ASCII
 						printf("O resultado deve impresso em:\n");
 						printf("1	- Hexa\n");
 						printf("2	- ASCII\n");
@@ -215,6 +203,7 @@ int main()
 					flag2 = 0;
 					break;
 				case 'h':
+					//Imperssao do resultado do Hash
 					printf("Resultado do Hash: ");
 					hexdump(receive,20);
 					break;
