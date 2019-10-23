@@ -143,17 +143,15 @@ int main()
 				case 'c':
 					printf("\n%i\n", tamanhoaux1);
 					printf("\nMensagem criptografada em hexa: ");
-					while(tamanhoaux1 > 16) {
-							tamanhoaux1 = tamanhoaux1/16;
+					while(tamanhoaux1 > 15) {
+							tamanhoaux1 -= 16;
 							k++;
 					}
 
-					printf("\nK1:%i\n", k);
-					if(tamanhoaux1 % 16 > 0)
+					if(tamanhoaux1 != 0)
 						k++;
 
 						hexdump(receive,k*16);
-					printf("\nK2:%i\n", k);
 					break;
 				
 				case 'h':
