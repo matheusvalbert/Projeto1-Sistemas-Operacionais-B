@@ -127,6 +127,9 @@ int main()
 			{
 				case 'c':
 					printf("\nMensagem criptografada em hexa: ");
+					if(tamanhostr <= 20)
+						hexdump(receive,20);
+					else
 					hexdump(receive,tamanhostr);
 					break;
 				
