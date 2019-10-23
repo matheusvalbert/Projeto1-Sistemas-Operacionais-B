@@ -141,7 +141,6 @@ int main()
 			switch(stringToSend[0])
 			{
 				case 'c':
-					printf("\n%i\n", tamanhoaux1);
 					printf("\nMensagem criptografada em hexa: ");
 					while(tamanhoaux1 > 15) {
 							tamanhoaux1 -= 16;
