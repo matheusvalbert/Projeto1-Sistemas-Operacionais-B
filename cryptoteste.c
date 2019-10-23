@@ -67,12 +67,12 @@ void hexdump(unsigned char *buf, unsigned int len)
 
 int main()
 {
-	int ret, fd, i=0,j=0, flag = 0, flag2 = 0;
+	int ret, fd, i=0,j=0, flag = 0, flag2 = 0, k = 0;
 	char op, op2;
 	char stringToSend[BUFFER_LENGTH], stringReceive[BUFFER_LENGTH], stringaux[BUFFER_LENGTH];
 	char receive[BUFFER_LENGTH];
 	char buf;
-	int tamanhostr,tamanhoaux;
+	int tamanhostr,tamanhoaux, tamanhoaux1 = 0;
 	fd = open("/dev/crypto", O_RDWR);             // Abre o device
 	if (fd < 0){
 		perror("Failed to open the device...");
@@ -87,6 +87,20 @@ int main()
 		printf("	3 - Sair\n");
 		__fpurge(stdin);
 		scanf("%c",&op);
+
+		for(int i = 0; i < BUFFER_LENGTH; i++) {
+			stringToSend[i] = '\0';
+			stringReceive[i] = '\0';
+			stringaux[i] = '\0';
+			receive[i] = '\0';
+		}
+
+
+ 		tamanhostr = 0;
+		tamanhoaux = 0;
+		tamanhoaux1 = 0;
+		buf = '\0';
+		ret = 0; i = 0; j = 0; flag = 0; flag2 = 0, k = 0;
 		
 		switch(op)
 		{
@@ -96,6 +110,7 @@ int main()
 	    		fgets(stringReceive, sizeof(stringReceive), stdin);
 
 	    		tamanhostr = strlen(stringReceive);
+			tamanhoaux1 = tamanhostr -2;
 	    		if(stringReceive[tamanhostr-1]=='\n')
 				stringReceive[--tamanhostr] = '\0';
 			stringToSend[0]=stringReceive[0];
@@ -126,11 +141,19 @@ int main()
 			switch(stringToSend[0])
 			{
 				case 'c':
+					printf("\n%i\n", tamanhoaux1);
 					printf("\nMensagem criptografada em hexa: ");
-					if(tamanhostr <= 16)
-						hexdump(receive,16);
-					else
-					hexdump(receive,tamanhostr);
+					while(tamanhoaux1 > 16) {
+							tamanhoaux1 = tamanhoaux1/16;
+							k++;
+					}
+
+					printf("\nK1:%i\n", k);
+					if(tamanhoaux1 % 16 > 0)
+						k++;
+
+						hexdump(receive,k*16);
+					printf("\nK2:%i\n", k);
 					break;
 				
 				case 'h':
