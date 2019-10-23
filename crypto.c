@@ -428,7 +428,15 @@ outc:		kfree(input);
 			i++;
 			j+=2;
 		}
+		//Completa com 0 os espacos vazios
+		while(i % 16 != 0) {
+			
+			input[i] = 0x00;	
+			i++;
+		}
+		input[i] = '\0';
 		tamanhomsg = i;
+
 		//Inicia a descriptografia
 		numop = tamanhomsg/16;
 		i = 0;
