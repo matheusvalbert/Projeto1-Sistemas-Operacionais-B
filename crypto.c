@@ -30,7 +30,7 @@ static struct class*  cryptoClass  = NULL;
 static struct device* cryptoDevice = NULL;
 
 
-static char   msg[256] = {0};
+static unsigned char   msg[256] = {0};
 static int tamanhomsg = 0;
 
 //Receber parametros na hora da instalacao
@@ -330,9 +330,17 @@ static int dev_open(struct inode *inodep, struct file *filep) {
 //Leitura da area do usuario
 static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset) {
 	
-	int error_count = 0;
+	int error_count = 0, i = 0;
+	unsigned char msg_aux[256] = {0};
 
-	error_count = copy_to_user(buffer,msg, tamanhomsg);
+	for(i = 0; i< tamanhomsg; i++) {
+		sprintf(&msg_aux[i*2], "%02x",msg[i]);
+	}
+	msg_aux[i*2] = '\0';
+	
+	printk("string to user: "); hexdump(msg_aux, strlen(msg)*2);
+
+	error_count = copy_to_user(buffer,msg_aux, strlen(msg_aux));
 
 	if (error_count==0) {            
 		return 1;

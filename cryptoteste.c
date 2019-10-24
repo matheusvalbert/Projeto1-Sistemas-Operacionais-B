@@ -137,6 +137,21 @@ int main()
 					return errno;
 			}
 			tamanhostr = strlen(receive);
+			i=0;
+			while(i!=tamanhostr) {
+				receive[i] = convert(receive[i]);
+				i++;
+			}
+
+			//Uniao dos numeros em hexa
+			i=0;
+			while(i != tamanhostr/2) {
+				receive[i] = (receive[j]<<4) + receive[j+1];		
+				i++;
+				j+=2;
+			}
+			receive[i] = '\0';
+			tamanhostr=i;
 			//Impressoes diferentes dependendo do caso
 			switch(stringToSend[0])
 			{
@@ -182,11 +197,28 @@ int main()
 					perror("Failed to read the message from the device.");
 					return errno;
 			}
-			tamanhostr = strlen(receive);			
+			tamanhostr = strlen(receive);
+			i=0;
+			while(i != tamanhostr) {
+				receive[i] = convert(receive[i]);
+				i++;
+			}
+
+			//Uniao dos numeros em hexa
+			i=0;
+			j=0;
+			while(i != tamanhostr/2) {
+				receive[i] = (receive[j]<<4) + receive[j+1];		
+				i++;
+				j+=2;
+			}
+			receive[i] = '\0';
+			tamanhostr=i+1;			
 			//Impressoes diferentes dependendo do caso
 			switch(stringToSend[0])
 			{
 				case 'c':
+					
 					printf("\nMensagem criptografada em hexa: ");
 					while(tamanhoaux1 > 15) {
 							tamanhoaux1 -= 16;
@@ -195,7 +227,8 @@ int main()
 
 					if(tamanhoaux1 >0)
 						k++;
-						hexdump(receive,(k)*16);
+					
+					hexdump(receive,(k)*16);
 					k = 0;
 					break;
 				case 'd':
@@ -212,15 +245,20 @@ int main()
 						{
 							case '1':
 								printf("\nMensagem descriptografada em hexa: ");
-								hexdump(receive,tamanhostr);
+								i =0;
+								while(receive[i] != '\0')
+								{
+									printf("%02X",receive[i]);
+									i++;
+								}
+								printf("\n");
+								i = 0;
 							break;
 							case '2':
 								printf("\nMensagem descriptografada em ASCII: ");
-								strcpy(stringaux,receive);
-								tamanhoaux = strlen(stringaux);
 								i=0;
-								while(stringaux[i]!='\0') {
-									printf("%c",stringaux[i]);
+								while(i != tamanhostr) {
+									printf("%c",receive[i]);
 									i++;
 								}
 								printf("\n");
