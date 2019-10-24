@@ -38,9 +38,9 @@ static char *key_getu = "";
 static char *iv_get = "";
 
 module_param(key_getu, charp, 0000);
-MODULE_PARM_DESC(key_getu, "00000000000000000000");
+MODULE_PARM_DESC(key_getu, "0000000000000000000000000000000000000000");
 module_param(iv_get, charp, 0000);
-MODULE_PARM_DESC(iv_get, "00000000000000000000");
+MODULE_PARM_DESC(iv_get, "0000000000000000000000000000000000000000");
 
 //Links para o device na area do usuario
 static struct file_operations fops =
@@ -110,6 +110,38 @@ char convert(char op) {
 	return 0;
 }
 
+char convert2(int num)
+{
+	if(num<0)
+		num = -num;
+	switch(num)
+	{
+		case 0:
+		case 1:
+		case 2:
+		case 3:
+		case 4:
+		case 5:
+		case 6:
+		case 7:
+		case 8:
+		case 9:
+			return 0x30 + num;
+		break;
+		case 10:
+		case 11:
+		case 12:
+		case 13:
+		case 14:
+		case 15:
+			return 0x61 + num - 10;
+		break;
+		default:
+			printk("error %i", num);
+	}
+	return 0;
+	
+}
 //Callback
 static void test_skcipher_cb(struct crypto_async_request *req, int error) {
 
@@ -139,11 +171,10 @@ static int cipher(int way,int numop,char ms[]) {
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	struct tcrypt_result result;
-	char key[20], iv[20], *input = NULL;
-	int i = 0, ret;
-
+	char key[80], iv[80], *input = NULL;
+	int i = 0, ret, j=0;
 	//Copia da key e iv
-	while(i != 16) {
+	while(i != 32) {
 	
 		key[i] = key_getu[i];
 		if(key[i]=='\0')
@@ -157,9 +188,27 @@ static int cipher(int way,int numop,char ms[]) {
 		}
 		i++;
 	}
-	key[16]='\0';
-	iv[16]='\0';
-
+	key[32]='\0';
+	iv[32]='\0';
+	i=0;
+	//Transforma a string em numero hexa
+	while(key[i] != '\0') {
+		
+		key[i] = convert(key[i]);
+		iv[i] = convert(iv[i]);
+		i++;
+	}
+	i = 0;
+	//Uniao dos numeros em hexa
+	i=0;
+	while(i != 16) {
+		key[i] = (key[j]<<4) + key[j+1];		
+		iv[i] = (iv[j]<<4) + iv[j+1];
+		i++;
+		j+=2;
+	}
+	printk("key");hexdump(key,16);
+	printk("iv");hexdump(iv,16);
 	//Escolha do algoritmo de criptografia
 	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
@@ -314,8 +363,17 @@ static int dev_open(struct inode *inodep, struct file *filep) {
 static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset) {
 	
 	int error_count = 0;
-
-	error_count = copy_to_user(buffer,msg, tamanhomsg);
+	int i = 0 , j = 0;
+	char msgsend[512];
+	for(i = 0; i<tamanhomsg; i++)
+	{
+		msgsend[j] = convert2((msg[i]/16)%16);
+		msgsend[j+1] = convert2(msg[i]%16);
+		j = j+2;
+	}
+	msgsend[j+1] = '\0';
+	printk("fim msg");hexdump(msgsend,strlen(msgsend));
+	error_count = copy_to_user(buffer,msgsend, strlen(msgsend));
 
 	if (error_count==0) {            
 		return 1;
@@ -428,7 +486,15 @@ outc:		kfree(input);
 			i++;
 			j+=2;
 		}
+		//Completa com 0 os espacos vazios
+		while(i % 16 != 0) {
+			
+			input[i] = 0x00;	
+			i++;
+		}
+		input[i] = '\0';
 		tamanhomsg = i;
+
 		//Inicia a descriptografia
 		numop = tamanhomsg/16;
 		i = 0;
