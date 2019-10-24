@@ -148,11 +148,13 @@ static int cipher(int way,int numop,char ms[]) {
 		if(key[i]=='\0')
 		{
 			key[i]='0';
+			key[i+1] = '\0';
 		}
 		iv[i] = iv_get[i];
 		if(iv[i]=='\0')
 		{
 			iv[i]='0';
+			iv[i+1] = '\0';
 		}
 		i++;
 	}
