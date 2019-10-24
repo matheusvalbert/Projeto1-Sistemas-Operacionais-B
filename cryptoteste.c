@@ -110,7 +110,7 @@ int main()
 	    		fgets(stringReceive, sizeof(stringReceive), stdin);
 
 	    		tamanhostr = strlen(stringReceive);
-			tamanhoaux1 = tamanhostr -2;
+			tamanhoaux1 = tamanhostr - 2;
 	    		if(stringReceive[tamanhostr-1]=='\n')
 				stringReceive[--tamanhostr] = '\0';
 			stringToSend[0]=stringReceive[0];
@@ -151,6 +151,7 @@ int main()
 						k++;
 
 						hexdump(receive,k*16);
+					k = 0;
 					break;
 				
 				case 'h':
@@ -167,6 +168,7 @@ int main()
 			__fpurge(stdin);
 			fgets(stringToSend, sizeof(stringToSend), stdin);
 			tamanhostr = strlen(stringToSend);
+			tamanhoaux1 = (tamanhostr-1)/2;
 			printf("String enviada: %s", stringToSend);
 			//Envia os dados para o device
 			ret = write(fd, stringToSend, strlen(stringToSend)); 
@@ -185,8 +187,16 @@ int main()
 			switch(stringToSend[0])
 			{
 				case 'c':
-					printf("\nMensagem criptografada: ");
-					hexdump(receive,tamanhostr);
+					printf("\nMensagem criptografada em hexa: ");
+					while(tamanhoaux1 > 15) {
+							tamanhoaux1 -= 16;
+							k++;
+					}
+
+					if(tamanhoaux1 >0)
+						k++;
+						hexdump(receive,(k)*16);
+					k = 0;
 					break;
 				case 'd':
 					do
