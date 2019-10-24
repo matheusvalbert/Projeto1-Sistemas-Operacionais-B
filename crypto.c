@@ -1,59 +1,48 @@
+#include <crypto/hash.h>
+#include <linux/err.h>
 #include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/init.h>
-#include <linux/crypto.h>
-#include <linux/mm.h>
 #include <linux/scatterlist.h>
-#include <crypto/skcipher.h>
-#include <linux/kernel.h>
-#include <linux/stat.h>   
-#include <linux/device.h>       
-#include <linux/fs.h>             
-#include <linux/uaccess.h>   
-#include <linux/mutex.h>    
-#define  DEVICE_NAME "crypto"  
-#define  CLASS_NAME  "cryptoapi"        
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <crypto/rng.h>
+#include <crypto/md5.h>
+#include <crypto/sha.h>
+#include <crypto/internal/skcipher.h>
+#include <linux/jiffies.h>
+#include <linux/mutex.h> 
 
-#define PFX "cryptoapi: "
-
-MODULE_AUTHOR("Grupo SO");
-MODULE_DESCRIPTION("Simple CryptoAPI");
+MODULE_AUTHOR("Projeto1 SO_B");
+MODULE_DESCRIPTION("crypto api");
 MODULE_LICENSE("GPL");
-
-/* ====== CryptoAPI ====== */
+#define  DEVICE_NAME "crypto"
+#define  CLASS_NAME  "cryptoapi"
 
 #define DATA_SIZE       16
 
-static char *key = "";//Para receber parâmetros
-static char *iv = "";
+//Links para o device na area do usuario
+static DEFINE_MUTEX(crypto_mutex);
 static int    majorNumber;              
-static int     dev_open(struct inode *, struct file *);//Para receber as funções
+static int     dev_open(struct inode *, struct file *);
 static int     dev_release(struct inode *, struct file *);
 static ssize_t dev_read(struct file *, char *, size_t, loff_t *);
 static ssize_t dev_write(struct file *, const char *, size_t, loff_t *);
-static struct class*  cryptoClass  = NULL; ///< The device-driver class struct pointer
-static struct device* cryptoDevice = NULL; ///< The device-driver device struct pointer
-static char msg[256], auxmsg[35];//17:16+1, 35:17*2+1
+static struct class*  cryptoClass  = NULL;
+static struct device* cryptoDevice = NULL;
+
+
+static unsigned char   msg[256] = {0};
 static int tamanhomsg = 0;
-static DEFINE_MUTEX(crypto_mutex);
 
-struct tcrypt_result {
-    struct completion completion;
-    int err;
-};
+//Receber parametros na hora da instalacao
+static char *key_getu = "";
+static char *iv_get = "";
 
-static	struct crypto_skcipher *tfm = NULL;
-static	struct scatterlist sg[2];
-static	struct skcipher_request *req = NULL;
-static  int ret;
-static  char *input, *output;
-static struct tcrypt_result result;
+module_param(key_getu, charp, 0000);
+MODULE_PARM_DESC(key_getu, "00000000000000000000");
+module_param(iv_get, charp, 0000);
+MODULE_PARM_DESC(iv_get, "00000000000000000000");
 
-module_param(key, charp, 0000);
-MODULE_PARM_DESC(key, "A string");
-module_param(iv, charp, 0000);
-MODULE_PARM_DESC(iv, "A string");
-
+//Links para o device na area do usuario
 static struct file_operations fops =
 {
    .open = dev_open,
@@ -62,204 +51,281 @@ static struct file_operations fops =
    .release = dev_release,
 };
 
-//--------------------------CharToHexa--------------------------
-static void
-CharToHexa(void)
-{
-	int i = 0;
-	printk("String: %s\n", msg);		
-	if(msg[tamanhomsg-1]=='\n')
-        	msg[--tamanhomsg] = '\0';
+//Structs para criptografia e descriptografia
+struct sdesc {
+    struct shash_desc shash;
+    char ctx[];
+};
 
-    	while( i<tamanhomsg)
-	{
-        	sprintf(auxmsg+i*2, "%02X", msg[i]);
-		i++;
-    	}
-    	printk("String to Hexa:%s\n", auxmsg);
-	msg[0]='\0';
-	strcpy(msg,auxmsg);
-	auxmsg[0]='\0';
+struct tcrypt_result {
+	struct completion completion;
+	int err;
+};
+
+//Conversao para hexa, apos receber os dados da area do usuario
+char convert(char op) {
+
+	switch(op) {
+
+	case '0':
+		return 0x0;
+	case '1':
+		return 0x1;
+	case '2':
+		return 0x2;
+	case '3':
+		return 0x3;
+	case '4':
+		return 0x4;
+	case '5':
+		return 0x5;
+	case '6':
+		return 0x6;
+	case '7':
+		return 0x7;
+	case '8':
+		return 0x8;
+	case '9':
+		return 0x9;
+	case 'A':
+	case 'a':
+		return 0xa;
+	case 'B':
+	case 'b':
+		return 0xb;
+	case 'C':
+	case 'c':
+		return 0xc;
+	case 'D':
+	case 'd':
+		return 0xd;
+	case 'E':
+	case 'e':
+		return 0xe;
+	case 'F':
+	case 'f':
+		return 0xf;
+	}
+
+	return 0;
 }
-//--------------------------------------------------------------
 
-//--------------------------HexaToChar--------------------------
-static int
-hex_to_int(char c)
-{
-        int first = c / 16 - 3;
-        int second = c % 16;
-        int result = first*10 + second;
-        if(result > 9) result--;
-        return result;
+//Callback
+static void test_skcipher_cb(struct crypto_async_request *req, int error) {
+
+	struct tcrypt_result *result = req->data;
+
+	if (error == -EINPROGRESS)
+		return;
+	result->err = error;
+	complete(&result->completion);
 }
 
-static int
-hex_to_ascii(char c, char d)
-{
-        int high = hex_to_int(c) * 16;
-        int low = hex_to_int(d);
-        return high+low;
-}
+//Impressão em hexa
+static void hexdump(unsigned char *buf, unsigned int len) {
 
-static void
-HexaToChar(void)
-{
-	int i = 0, j = 0;
-	char buf = 0;
-	auxmsg[0]='\0';
-	while(i < tamanhomsg)
-	{
-		if(i % 2 != 0)
-		{
-                       	auxmsg[j] = (char)hex_to_ascii(buf, msg[i]);
-			j++;
-               	}
-		else
-		{
-                       buf = msg[i];
-	      	}
-		i++;
-        }
-	auxmsg[j]='\0';
-	msg[0]='\0';
-	strcpy(msg,auxmsg);
-	printk("Original string: %s\n", msg);
-	auxmsg[0]='\0';
-}
-//--------------------------------------------------------------
-
-static void
-hexdump(unsigned char *buf, unsigned int len)
-{
         while (len--)
 	{
-	        printk("%d", *buf++);
+		printk("%02x", *buf++);
 	}
 
         printk("\n");
 }
 
-void callback_function(struct crypto_async_request *req, int error)
-{
+//Criptografia/descriptografia
+static int cipher(int way,int numop,char ms[]) {
 
-}
+	struct crypto_skcipher *tfm;
+	struct skcipher_request *req;
+	struct scatterlist sg;
+	struct tcrypt_result result;
+	char key[20], iv[20], *input = NULL;
+	int i = 0, ret;
 
-static void test_skcipher_cb(struct crypto_async_request *req, int error)
-{
-    struct tcrypt_result *result = req->data;
-
-    if (error == -EINPROGRESS)
-        return;
-    result->err = error;
-    complete(&result->completion);
-    pr_info("Encryption finished successfully\n");
-}
-
-
-static int
-cryptoapi_demo(char operacao)
-{
-	int i=0, rc = 0;
-        tfm = crypto_alloc_skcipher ("cbc-aes", 0, 0);
-	if (IS_ERR(tfm)) 
-	{
-		printk("could nor allocate skcipher tfm\n");
-		return -1;
-	}
-
-	req = skcipher_request_alloc(tfm, GFP_KERNEL);
-    	if (!req) {
-        	printk("could not allocate tfm request\n");
-        	goto out;
-    	}
-
-        ret = crypto_skcipher_setkey(tfm, key, strlen(key));
-
-        if (ret) {
-                printk(KERN_ERR PFX "error ret\n");
-                goto out;
-        }
+	//Copia da key e iv
+	while(i != 16) {
 	
-   	skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, test_skcipher_cb, &result);
+		key[i] = key_getu[i];
+		if(key[i]=='\0')
+		{
+			key[i]='0';
+		}
+		iv[i] = iv_get[i];
+		if(iv[i]=='\0')
+		{
+			iv[i]='0';
+		}
+		i++;
+	}
+	key[16]='\0';
+	iv[16]='\0';
 
-        input = kmalloc(DATA_SIZE, GFP_KERNEL);
+	//Escolha do algoritmo de criptografia
+	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
+	if (IS_ERR(tfm)) {
+
+		ret = PTR_ERR(tfm);
+		return ret;
+	}
+
+	//Criacao do request
+	req = skcipher_request_alloc(tfm, GFP_KERNEL);
+	if (IS_ERR(req)) {
+
+		pr_err("ERROR: skcipher_request_alloc\n");
+		ret = PTR_ERR(req);
+		goto error_tfm;
+	}
+
+	skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG, test_skcipher_cb, &result);
+
+	//Set da key
+	ret = crypto_skcipher_setkey(tfm, key, DATA_SIZE);
+	if (ret != 0) {
+
+		pr_err("ERROR: crypto_skcipher_setkey\n");
+		goto error_req;
+	}
+
+	//Alocação do dado que vai ser criptado/decriptado
+	input = kmalloc(DATA_SIZE, GFP_KERNEL);
         if (!input) {
-                printk(KERN_ERR PFX "kmalloc(input) failed\n");
+
+                printk("kmalloc(input) failed\n");
                 goto out;
         }
 
-        output = kmalloc(DATA_SIZE, GFP_KERNEL);
-        if (!output) {
-                printk(KERN_ERR PFX "kmalloc(output) failed\n");
-                kfree(input);
-                goto out;
-        }
-	while(i!=16)
-	{
-		input[i] = msg[i];
-		i++;
-	}
+	//Copia do dado para o input
 	i=0;
-	sg_init_one(&sg[0], input, DATA_SIZE);
-	sg_init_one(&sg[1], output, DATA_SIZE);
-	skcipher_request_set_crypt(req, &sg[0], &sg[1], 16, iv);
-	if(operacao == 'c')
-	{
-		crypto_skcipher_encrypt(req);
-		printk(KERN_ERR PFX "input anterior: "); hexdump(input, 16);
-		printk(KERN_ERR PFX "output anterior: "); hexdump(output, 16);
-	}
-	if(operacao == 'd')
-	{
-		
-		crypto_skcipher_decrypt(req);
-		printk("decrypted");
-		printk(KERN_ERR PFX "output decriptada: "); hexdump(output, 16);
-	}
-	while(i!=16)
-	{
-		msg[i] = output[i];
+	while(i!=16) {
+
+		input[i] = ms[i+16*numop];
 		i++;
 	}
 
-	    switch (rc) {
-		    case 0:
-			break;
-		    case -EINPROGRESS:
-		    case -EBUSY:
-			rc = wait_for_completion_interruptible(
-			    &result.completion);
-			if (!rc && !result.err) {
-			    reinit_completion(&result.completion);
-			    break;
-			}
-		    default:
-			pr_info("skcipher encrypt returned with %d result %d\n",
-			    rc, result.err);
-			break;
-    }
-    init_completion(&result.completion);
+	//Link da scatterlist com o input dos dados e criacao do request para criptografia/descriptografia
+	sg_init_one(&sg, input, DATA_SIZE);
+	skcipher_request_set_crypt(req, &sg, &sg, DATA_SIZE, iv);
+	init_completion(&result.completion);
 
-        kfree(output);
-        kfree(input);
+	//Escolha do que vai ser feito criptografar/descriptografar
+	if (way == 0) {
 
-out:
-        crypto_free_skcipher(tfm);
+		printk("input criptografia: "); hexdump(input, DATA_SIZE);
+
+		ret = crypto_skcipher_encrypt(req);
+
+		printk("output criptografia: "); hexdump(input, DATA_SIZE);
+	}
+	else if(way == 1) {
+
+		printk("input descriptografia: "); hexdump(input, DATA_SIZE);
+
+		ret = crypto_skcipher_decrypt(req);
+
+		printk("output descriptografia: "); hexdump(input, DATA_SIZE);
+	}
+	else {
+
+		goto out;
+	}
+
+	//Verica e realiza a espera do fim da criptografia/descriptografia
+	switch (ret) {
+	case 0:
+		break;
+	case -EINPROGRESS:
+	case -EBUSY:
+		ret = wait_for_completion_interruptible(&result.completion);
+		break;
+	}
+
+	i=0;
+	while(i!=16) {
+
+		msg[i+16*numop] = input[i];
+		if(input[i] == 0) {
+
+			tamanhomsg = i+16*numop;
+		}
+		else {
+			tamanhomsg = i+16*numop+1;
+		}
+		i++;
+	}
+
+//Libera os espacos de memoria
+error_req:
 	skcipher_request_free(req);
-	return 1;
-}
-
-
-static int dev_open(struct inode *inodep, struct file *filep){
+error_tfm:
+	crypto_free_skcipher(tfm);
+	return ret;
+out:
+	kfree(input);
+	key[0]='\0';
+	iv[0]='\0';
 	return 0;
 }
 
-static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset){
-	int error_count = 0;
-// copy_to_user has the format ( * to, *from, size) and returns 0 on success
-	error_count = copy_to_user(buffer,msg, tamanhomsg);
-	if (error_count==0){            
+static int hash(char input[]) {
+
+	struct crypto_shash *alg;
+	struct sdesc *sdesc; 
+	char digest[60];
+	int ret, size;
+	
+	//Escolha do algoritmo no hash
+	alg = crypto_alloc_shash("sha1", 0, 0);
+	if (IS_ERR(alg)) {
+		return PTR_ERR(alg);
+	}
+
+	//Coleta o tamanho e aloca espaco para a hash
+	size = sizeof(struct shash_desc) + crypto_shash_descsize(alg);
+	sdesc = kmalloc(size, GFP_KERNEL);
+	sdesc->shash.tfm = alg;
+	if (IS_ERR(sdesc)) {
+		pr_info("can't alloc sdesc\n");
+		return PTR_ERR(sdesc);
+	}
+
+	//Realiza a criacao do hash e imprime os resultados
+	ret = crypto_shash_digest(&sdesc->shash, input, tamanhomsg, digest);
+	tamanhomsg = 20;
+	printk("SHA1: "); hexdump(digest, 20);
+	strcpy(msg,digest);
+	kfree(sdesc);
+	crypto_free_shash(alg);
+	return ret;
+}
+
+//Abertura do device e lock no mutex
+static int dev_open(struct inode *inodep, struct file *filep) {
+	
+	if(!mutex_trylock(&crypto_mutex)){
+
+      		printk(KERN_ALERT "CryptoAPI: Device in use by another process");
+      		return -EBUSY;
+   	}
+	return 0;
+}
+
+//Leitura da area do usuario
+static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *offset) {
+	
+	int error_count = 0, i = 0;
+	unsigned char msg_aux[256] = {0};
+
+	for(i = 0; i< strlen(msg); i++) {
+		sprintf(&msg_aux[i*2], "%02x",msg[i]);
+	}
+	msg_aux[i*2] = '\0';
+	
+	printk("string to user: "); hexdump(msg_aux, strlen(msg)*2);
+
+	error_count = copy_to_user(buffer,msg_aux, strlen(msg_aux));
+
+	if (error_count==0) {            
 		return 1;
 	}
 	else {
@@ -268,103 +334,219 @@ static ssize_t dev_read(struct file *filep, char *buffer, size_t len, loff_t *of
 	}
 }
 
+//Realizacao dos requests feitos pela area do usuario
+static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset) {
+	
+	int i = 0, j=0, numop = 0;
+	char *input = NULL;
 
-static ssize_t dev_write(struct file *filep, const char *buffer, size_t len, loff_t *offset){
-	int i = 0;
+	sprintf(msg, "%s", buffer); 	
+	if(msg[0] == 'c') {
 
-	tamanhomsg = strlen(msg);
-	CharToHexa();	
-	if(0){    /// Try to acquire the mutex (i.e., put the lock on/down)
-                                          /// returns 1 if successful and 0 if there is contention
-      		printk(KERN_ALERT "EBBChar: Device in use by another process");
-      		return -EBUSY;
-   	}
-	else {
-		sprintf(msg, "%s", buffer); 	
-		if(msg[0] == 'c')
-		{
-			tamanhomsg = strlen(msg);
-			while(i!=17)
-			{
-				msg[i]=msg[i+1];
-				i++;
-			}
-			cryptoapi_demo('c');
-		}        
-		else if(msg[0] == 'd')
-		{
-		/*
-			msg[0] = 'd';
-			msg[1] = 0x41;
-			msg[2] = 0x42;
-			msg[3] = 0x43;
-		*/
-			cryptoapi_demo('d');
-			//tamanhomsg = strlen(msg);
-			HexaToChar();
-		}      
-		return 1;
-	}
-        return 0;
+		//Retira o c do inicio da string
+		while(msg[i+1]!='\0') {
+
+			msg[i]=msg[i+1];
+			i++;
+		}
+		msg[i] = '\0';
+		tamanhomsg = strlen(msg);
+
+		//Aloca o espaco para o input
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+		
+		        printk("kmalloc(input) failed\n");
+			goto outc;
+		}
+
+		i=0;
+		//Transforma a string em numero hexa
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
+			i++;
+		}
+
+		//Uniao dos numeros em hexa
+		i=0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		
+		//Completa com 0 os espacos vazios
+		while(i % 16 != 0) {
+			
+			input[i] = 0x00;	
+			i++;
+		}
+		input[i] = '\0';
+		tamanhomsg = i;
+		
+		numop = tamanhomsg/16;
+		
+		//Inicia criptografia
+		i = 0;
+		while(i!=numop) {
+
+			cipher(0,i,input);
+			i++;
+		}
+
+outc:		kfree(input);
+
+	}        
+	else if(msg[0] == 'd') {
+
+		//Retira o d do inicio da string
+		while(msg[i+1]!='\0') {
+
+			msg[i]=msg[i+1];
+			i++;
+		}
+		msg[i] = '\0';
+		tamanhomsg = strlen(msg);
+
+		//Aloca a memoria para o input
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+
+		        printk("kmalloc(input) failed\n");
+			goto outd;
+		}
+
+		//Transforma a string em numero hexa
+		i=0;
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
+			i++;
+		}
+
+		//Uniao dos numeros em hexa
+		i=0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		//Completa com 0 os espacos vazios
+		while(i % 16 != 0) {
+			
+			input[i] = 0x00;	
+			i++;
+		}
+		input[i] = '\0';
+		tamanhomsg = i;
+
+		//Inicia a descriptografia
+		numop = tamanhomsg/16;
+		i = 0;
+		while(i!=numop) {
+
+			cipher(1,i,input);
+			i++;
+		}
+outd:		kfree(input);
+	}   
+	else if(msg[0] == 'h') {
+
+		//Retira o h do inicio da string
+		while(msg[i+1]!='\0') {
+
+			msg[i]=msg[i+1];
+			i++;
+		}
+		msg[i] = '\0';
+		tamanhomsg = strlen(msg);
+
+		input = kmalloc(128, GFP_KERNEL);
+		if (!input) {
+
+		        printk("kmalloc(input) failed\n");
+			goto outd;
+		}
+		//Transforma a string em numero hexa
+		i=0;
+		while(msg[i] != '\0') {
+			
+			msg[i] = convert(msg[i]);
+			i++;
+		}
+
+		//Uniao dos numeros em hexa
+		i = 0;
+		j = 0;
+		while(i != tamanhomsg/2) {
+
+			input[i] = (msg[j]<<4) + msg[j+1];		
+			
+			i++;
+			j+=2;
+		}
+		//Inicia a o hash
+		input[i] = '\0';
+		tamanhomsg = strlen(input);
+		hash(input);
+	} 
+	return 1;
 	
 }
 
-
-static int dev_release(struct inode *inodep, struct file *filep){
+//Abertura do mutex
+static int dev_release(struct inode *inodep, struct file *filep) {
+	
 	mutex_unlock(&crypto_mutex);
-
 	return 0;
 }
 
-/* ====== Module init/exit ====== */
+// Inicializacao do modulo e mutex
+static int __init cryptotest_init(void) {
+	
 
-static int __init
-init_cryptoapi_demo(void)
-{
-
-	//Register major number
+	mutex_init(&crypto_mutex);
 	majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
-	if (majorNumber<0)
-	{
+	if (majorNumber<0) {
+
 		printk(KERN_ALERT "Crypto failed to register a major number\n");
-	      return majorNumber;
+		return majorNumber;
 	}
 	 
-	// Register the device class
 	cryptoClass = class_create(THIS_MODULE, CLASS_NAME);
-	if (IS_ERR(cryptoClass)) // Check for error and clean up if there is
-	{              
+	if (IS_ERR(cryptoClass)) { 
+             
 		unregister_chrdev(majorNumber, DEVICE_NAME);
 		printk(KERN_ALERT "Failed to register device class\n");
-		return PTR_ERR(cryptoClass);          // Correct way to return an error on a pointer
+		return PTR_ERR(cryptoClass);
 	}
 	 
-	// Register the device driver
 	cryptoDevice = device_create(cryptoClass, NULL, MKDEV(majorNumber, 0), NULL, DEVICE_NAME);
-	if (IS_ERR(cryptoDevice)) // Clean up if there is an error
-	{               
-		class_destroy(cryptoClass);           // Repeated code but the alternative is goto statements
+	if (IS_ERR(cryptoDevice)) {
+
+		class_destroy(cryptoClass);
 		unregister_chrdev(majorNumber, DEVICE_NAME);
 		printk(KERN_ALERT "Failed to create the device\n");
 		return PTR_ERR(cryptoDevice);
 	}
-	mutex_init(&crypto_mutex);
 
-        return 0;
+	return 0;
 }
 
-static void __exit
-exit_cryptoapi_demo(void)
-{
-	device_destroy(cryptoClass, MKDEV(majorNumber, 0));     // remove the device
-	class_unregister(cryptoClass);                          // unregister the device class
-	class_destroy(cryptoClass);                             // remove the device class
-	unregister_chrdev(majorNumber, DEVICE_NAME);             // unregister the major number
+//Finalizacao do modulo e destruicao do mutex
+static void __exit cryptotest_exit(void) {
+
+	device_destroy(cryptoClass, MKDEV(majorNumber, 0));
+	class_unregister(cryptoClass);
+	class_destroy(cryptoClass);
+	unregister_chrdev(majorNumber, DEVICE_NAME);  
 	mutex_destroy(&crypto_mutex);
 }
 
-module_init(init_cryptoapi_demo);
-module_exit(exit_cryptoapi_demo);
-
-
-
+module_init(cryptotest_init);
+module_exit(cryptotest_exit);
