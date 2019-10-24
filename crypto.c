@@ -38,9 +38,9 @@ static char *key_getu = "";
 static char *iv_get = "";
 
 module_param(key_getu, charp, 0000);
-MODULE_PARM_DESC(key_getu, "00000000000000000000");
+MODULE_PARM_DESC(key_getu, "0000000000000000000000000000000000000000");
 module_param(iv_get, charp, 0000);
-MODULE_PARM_DESC(iv_get, "00000000000000000000");
+MODULE_PARM_DESC(iv_get, "0000000000000000000000000000000000000000");
 
 //Links para o device na area do usuario
 static struct file_operations fops =
@@ -139,11 +139,10 @@ static int cipher(int way,int numop,char ms[]) {
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	struct tcrypt_result result;
-	char key[20], iv[20], *input = NULL;
-	int i = 0, ret;
-
+	char key[80], iv[80], *input = NULL;
+	int i = 0, ret, j=0;
 	//Copia da key e iv
-	while(i != 16) {
+	while(i != 32) {
 	
 		key[i] = key_getu[i];
 		if(key[i]=='\0')
@@ -157,9 +156,27 @@ static int cipher(int way,int numop,char ms[]) {
 		}
 		i++;
 	}
-	key[16]='\0';
-	iv[16]='\0';
-
+	key[32]='\0';
+	iv[32]='\0';
+	i=0;
+	//Transforma a string em numero hexa
+	while(key[i] != '\0') {
+		
+		key[i] = convert(key[i]);
+		iv[i] = convert(iv[i]);
+		i++;
+	}
+	i = 0;
+	//Uniao dos numeros em hexa
+	i=0;
+	while(i != 16) {
+		key[i] = (key[j]<<4) + key[j+1];		
+		iv[i] = (iv[j]<<4) + iv[j+1];
+		i++;
+		j+=2;
+	}
+	printk("key");hexdump(key,16);
+	printk("iv");hexdump(iv,16);
 	//Escolha do algoritmo de criptografia
 	tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
